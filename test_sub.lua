@@ -35,7 +35,7 @@ end
 -- create SUB worker
 local zsub = zworker.new_sub(ctx, loop, handle_data)
 
-zsub:setopt(zmq.SUBSCRIBE, "")
+zsub:sub("")
 zsub:connect("tcp://localhost:5555")
 
 loop:loop()

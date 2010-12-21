@@ -25,6 +25,10 @@ local tremove = table.remove
 
 local ev = require"ev"
 local zmq = require"zmq"
+local z_SUBSCRIBE = zmq.SUBSCRIBE
+local z_UNSUBSCRIBE = zmq.UNSUBSCRIBE
+local z_NOBLOCK = zmq.NOBLOCK
+local z_RCVMORE = zmq.RCVMORE
 
 local default_send_max = 2
 local default_recv_max = 2
@@ -35,6 +39,14 @@ end
 
 local function worker_setopt(this, ...)
 	return this.socket:setopt(...)
+end
+
+local function worker_sub(this, filter)
+	return this.socket:setopt(z_SUBSCRIBE, filter)
+end
+
+local function worker_unsub(this, filter)
+	return this.socket:setopt(z_UNSUBSCRIBE, filter)
 end
 
 local function worker_bind(this, ...)
@@ -75,7 +87,7 @@ local function worker_send_data(this)
 
 	repeat
 		local data = buf[1]
-		local sent, err = s:send(data, zmq.NOBLOCK)
+		local sent, err = s:send(data, z_NOBLOCK)
 		if not sent then
 			-- got timeout error block writes.
 			if err == 'timeout' then
@@ -132,12 +144,12 @@ local function worker_receive_data(this)
 	this.recv_part = ''
 
 	repeat
-    local data, err = s:recv(zmq.NOBLOCK)
+    local data, err = s:recv(z_NOBLOCK)
 		if err then
 			-- check for blocking.
 			if err == 'timeout' then
 				-- check if we received a partial message.
-				if s:getopt(zmq.RCVMORE) == 1 then
+				if s:getopt(z_RCVMORE) == 1 then
 					this.recv_part = buf
 				end
 				-- recv blocked
@@ -154,7 +166,7 @@ local function worker_receive_data(this)
 		end
 		-- handle data.
 		buf = buf .. data
-		if s:getopt(zmq.RCVMORE) == 0 then
+		if s:getopt(z_RCVMORE) == 0 then
 			-- pass read data to worker
 			err = worker.handle_data(this, buf)
 			if err then
@@ -227,6 +239,17 @@ close = worker_close,
 }
 zworker_no_send_mt.__index = zworker_no_send_mt
 
+local zworker_sub_mt = {
+setopt = worker_setopt,
+getopt = worker_getopt,
+sub = worker_sub,
+unsub = worker_unsub,
+bind = worker_bind,
+connect = worker_connect,
+close = worker_close,
+}
+zworker_sub_mt.__index = zworker_sub_mt
+
 -- TODO: fix req/rep
 local zworker_req_mt = {
 send = worker_send,
@@ -251,7 +274,7 @@ zworker_rep_mt.__index = zworker_rep_mt
 local type_info = {
 	-- simple fixed state workers
 	[zmq.PUB]  = { mt = zworker_mt, enable_recv = false, recv = false, send = true },
-	[zmq.SUB]  = { mt = zworker_no_send_mt, enable_recv = true,  recv = true, send = false },
+	[zmq.SUB]  = { mt = zworker_sub_mt, enable_recv = true,  recv = true, send = false },
 	[zmq.PUSH] = { mt = zworker_mt, enable_recv = false, recv = false, send = true },
 	[zmq.PULL] = { mt = zworker_no_send_mt, enable_recv = true,  recv = true, send = false },
 	[zmq.PAIR] = { mt = zworker_mt, enable_recv = true,  recv = true, send = true },

@@ -13,4 +13,5 @@ Dependencies
 TODO
 ----
 * Fix REQ/REP & XREQ/XREP ZeroMQ socket handling.
+* Better handling of sending/receiving ZeroMQ multipart messages.
 
