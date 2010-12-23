@@ -24,7 +24,7 @@ local print = print
 local socket = require"socket"
 local ev = require"ev"
 
-local ioworker_mt = {
+local nsocket_mt = {
 handle_error = function(this, loc, err)
 	local worker = this.worker
 	local errFunc = worker.handle_error
@@ -32,7 +32,7 @@ handle_error = function(this, loc, err)
 	if errFunc then
 		errFunc(worker, loc, err)
 	else
-		print('ioworker: ' .. loc .. ': error ', err)
+		print('nsocket: ' .. loc .. ': error ', err)
 	end
 	this:close()
 end,
@@ -144,10 +144,10 @@ close = function(this)
 	end
 end,
 }
-ioworker_mt.__index = ioworker_mt
+nsocket_mt.__index = nsocket_mt
 
-local function ioworker_wrap(loop, worker, sck)
-	-- create ioworker
+local function nsocket_wrap(loop, worker, sck)
+	-- create nsocket
 	local this = {
 		loop = loop,
 		worker = worker,
@@ -157,7 +157,7 @@ local function ioworker_wrap(loop, worker, sck)
 		read_max = 65536,
 		is_closing = false,
 	}
-	setmetatable(this, ioworker_mt)
+	setmetatable(this, nsocket_mt)
 
 	sck:settimeout(0)
 	local fd = sck:getfd()
@@ -194,13 +194,12 @@ local function ioworker_wrap(loop, worker, sck)
 	return this
 end
 
-module(...)
+module'handler.nsocket'
 
 function new(loop, worker, host, port)
 	-- connect to server.
 	local sck = socket.tcp()
-	sck:settimeout(0)
-	local this = ioworker_wrap(loop, worker, sck)
+	local this = nsocket_wrap(loop, worker, sck)
 	local ret, err = sck:connect(host, port)
 	if err and err ~= 'timeout' then
 		-- socket error
@@ -211,5 +210,5 @@ function new(loop, worker, host, port)
 end
 
 -- export
-wrap = ioworker_wrap
+wrap = nsocket_wrap
 

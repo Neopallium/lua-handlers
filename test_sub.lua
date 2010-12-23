@@ -20,10 +20,10 @@
 
 require("zmq")
 local ev = require'ev'
-local zworker = require'zworker'
+local zsocket = require'handler.zsocket'
 local loop = ev.Loop.default
 
-local ctx = zmq.init(1)
+local ctx = zsocket.new(loop, 1)
 
 -- define SUB worker
 function handle_msg(sock, data)
@@ -31,7 +31,7 @@ function handle_msg(sock, data)
 end
 
 -- create SUB worker
-local zsub = zworker.new_sub(ctx, loop, handle_msg)
+local zsub = ctx:sub(handle_msg)
 
 zsub:sub("")
 zsub:connect("tcp://localhost:5555")

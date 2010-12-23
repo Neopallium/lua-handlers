@@ -20,12 +20,12 @@
 
 require("zmq")
 local ev = require'ev'
-local zworker = require'zworker'
+local zsocket = require'handler.zsocket'
 local loop = ev.Loop.default
 
-local ctx = zmq.init(1)
+local ctx = zsocket.new(loop, 1)
 
-local zpub = zworker.new_pub(ctx, loop)
+local zpub = ctx:pub()
 
 zpub:bind("tcp://lo:5555")
 

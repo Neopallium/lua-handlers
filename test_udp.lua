@@ -18,51 +18,36 @@
 -- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 -- THE SOFTWARE.
 
-require("zmq")
 local ev = require'ev'
 local nsocket = require'handler.nsocket'
-local acceptor = require'handler.acceptor'
-local zsocket = require'handler.zsocket'
 local loop = ev.Loop.default
 
-local ctx = zsocket.new(loop, 1)
-
-local zpub = ctx:pub()
-
-zpub:bind("tcp://lo:5555")
-
-local msg_id = 1
-
-local tcp_client_mt = {
+local udp_client_mt = {
 handle_error = function(this, loc, err)
 	if err ~= 'closed' then
-		print('tcp_client:', loc, err)
+		print('udp_client:', loc, err)
 	end
 end,
 handle_connected = function(this)
 end,
 handle_data = function(this, data)
-	zpub:send(tostring(msg_id) .. ':' .. data)
-  msg_id = msg_id + 1
+	print(data)
 end,
 }
-tcp_client_mt.__index = tcp_client_mt
+udp_client_mt.__index = udp_client_mt
 
--- new tcp client
-local function new_tcp_client(sck)
-	local this = setmetatable({}, tcp_client_mt)
+-- new udp client
+local function new_udp_client(sck)
+	local this = setmetatable({}, udp_client_mt)
 	this.sck = nsocket.wrap(loop, this, sck)
 	return this
 end
 
--- new tcp server
-local function new_server(port, handler)
-	print('New tcp server listen on: ' .. port)
-	return acceptor.new(loop, handler, '*', port, 1024)
-end
-
-local port = arg[1] or 8081
-local server = new_server(port, new_tcp_client)
+local host = arg[1] or "*"
+local port = arg[2] or 8081
+local sck = socket.udp()
+sck:setsockname(host, port)
+local client = new_udp_client(sck)
 
 loop:loop()
 

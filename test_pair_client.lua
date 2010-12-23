@@ -20,10 +20,10 @@
 
 require("zmq")
 local ev = require'ev'
-local zworker = require'zworker'
+local zsocket = require'handler.zsocket'
 local loop = ev.Loop.default
 
-local ctx = zmq.init(1)
+local ctx = zsocket.new(loop, 1)
 
 -- define PAIR worker
 function handle_msg(sock, data)
@@ -31,7 +31,7 @@ function handle_msg(sock, data)
 end
 
 -- create PAIR worker
-local zpair = zworker.new_pair(ctx, loop, handle_msg)
+local zpair = ctx:pair(handle_msg)
 
 zpair:connect("tcp://localhost:5555")
 

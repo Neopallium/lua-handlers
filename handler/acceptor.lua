@@ -71,19 +71,18 @@ local function acceptor_wrap(loop, handler, server, backlog)
 	return this
 end
 
-module(...)
+module'handler.acceptor'
 
 function new(loop, handler, addr, port, backlog)
 	-- setup server socket.
 	local server = socket.tcp()
-	server:settimeout(0)
+	-- wrap server socket
+	this = acceptor_wrap(loop, handler, server)
 	assert(server:setoption('reuseaddr', true), 'server:setoption failed')
 	-- bind server
 	assert(server:bind(addr, port))
 	assert(server:listen(backlog or 256))
 
-	-- wrap server socket
-	this = acceptor_wrap(loop, handler, server)
 	return this
 end
 

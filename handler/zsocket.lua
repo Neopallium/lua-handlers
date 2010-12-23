@@ -82,7 +82,7 @@ local function worker_handle_error(this, loc, err)
 	if errFunc then
 		errFunc(this, loc, err)
 	else
-		print('zworker: ' .. loc .. ': error ', err)
+		print('zsocket: ' .. loc .. ': error ', err)
 	end
 	worker_close(this)
 end
@@ -283,7 +283,7 @@ local function worker_handle_idle(this)
 	end
 end
 
-local zworker_mt = {
+local zsocket_mt = {
 _has_state = false,
 send = worker_send,
 setopt = worker_setopt,
@@ -293,9 +293,9 @@ bind = worker_bind,
 connect = worker_connect,
 close = worker_close,
 }
-zworker_mt.__index = zworker_mt
+zsocket_mt.__index = zsocket_mt
 
-local zworker_no_send_mt = {
+local zsocket_no_send_mt = {
 _has_state = false,
 setopt = worker_setopt,
 getopt = worker_getopt,
@@ -304,9 +304,9 @@ bind = worker_bind,
 connect = worker_connect,
 close = worker_close,
 }
-zworker_no_send_mt.__index = zworker_no_send_mt
+zsocket_no_send_mt.__index = zsocket_no_send_mt
 
-local zworker_sub_mt = {
+local zsocket_sub_mt = {
 _has_state = false,
 setopt = worker_setopt,
 getopt = worker_getopt,
@@ -317,9 +317,9 @@ bind = worker_bind,
 connect = worker_connect,
 close = worker_close,
 }
-zworker_sub_mt.__index = zworker_sub_mt
+zsocket_sub_mt.__index = zsocket_sub_mt
 
-local zworker_state_mt = {
+local zsocket_state_mt = {
 _has_state = true,
 send = worker_send,
 setopt = worker_setopt,
@@ -329,29 +329,29 @@ bind = worker_bind,
 connect = worker_connect,
 close = worker_close,
 }
-zworker_state_mt.__index = zworker_state_mt
+zsocket_state_mt.__index = zsocket_state_mt
 
 local type_info = {
 	-- publish/subscribe workers
-	[zmq.PUB]  = { mt = zworker_mt, enable_recv = false, recv = false, send = true },
-	[zmq.SUB]  = { mt = zworker_sub_mt, enable_recv = true,  recv = true, send = false },
+	[zmq.PUB]  = { mt = zsocket_mt, enable_recv = false, recv = false, send = true },
+	[zmq.SUB]  = { mt = zsocket_sub_mt, enable_recv = true,  recv = true, send = false },
 	-- push/pull workers
-	[zmq.PUSH] = { mt = zworker_mt, enable_recv = false, recv = false, send = true },
-	[zmq.PULL] = { mt = zworker_no_send_mt, enable_recv = true,  recv = true, send = false },
+	[zmq.PUSH] = { mt = zsocket_mt, enable_recv = false, recv = false, send = true },
+	[zmq.PULL] = { mt = zsocket_no_send_mt, enable_recv = true,  recv = true, send = false },
 	-- two-way pair worker
-	[zmq.PAIR] = { mt = zworker_mt, enable_recv = true,  recv = true, send = true },
+	[zmq.PAIR] = { mt = zsocket_mt, enable_recv = true,  recv = true, send = true },
 	-- request/response workers
-	[zmq.REQ]  = { mt = zworker_state_mt, enable_recv = false, recv = true, send = true },
-	[zmq.REP]  = { mt = zworker_state_mt, enable_recv = true,  recv = true, send = true },
+	[zmq.REQ]  = { mt = zsocket_state_mt, enable_recv = false, recv = true, send = true },
+	[zmq.REP]  = { mt = zsocket_state_mt, enable_recv = true,  recv = true, send = true },
 	-- extended request/response workers
-	[zmq.XREQ] = { mt = zworker_mt, enable_recv = true, recv = true, send = true },
-	[zmq.XREP] = { mt = zworker_mt, enable_recv = true,  recv = true, send = true },
+	[zmq.XREQ] = { mt = zsocket_mt, enable_recv = true, recv = true, send = true },
+	[zmq.XREP] = { mt = zsocket_mt, enable_recv = true,  recv = true, send = true },
 }
 
-local function zworker_wrap(s, s_type, loop, msg_cb, err_cb)
+local function zsocket_wrap(s, s_type, loop, msg_cb, err_cb)
 	local tinfo = type_info[s_type]
 	worker = { handle_msg = msg_cb, handle_error = err_cb}
-	-- create zworker
+	-- create zsocket
 	local this = {
 		s_type = x_type,
 		socket = s,
@@ -398,58 +398,67 @@ local function zworker_wrap(s, s_type, loop, msg_cb, err_cb)
 	return this
 end
 
-module(...)
-
-function new(ctx, s_type, loop, msg_cb, err_cb)
+local function create(self, s_type, msg_cb, err_cb)
 	-- create ZeroMQ socket
-	local s, err = ctx:socket(s_type)
+	local s, err = self.ctx:socket(s_type)
 	if not s then return nil, err end
 
 	-- wrap socket.
-	return zworker_wrap(s, s_type, loop, msg_cb, err_cb)
+	return zsocket_wrap(s, s_type, self.loop, msg_cb, err_cb)
 end
 
+module'handler.zsocket'
+
+local meta = {}
+meta.__index = meta
 local function no_recv_cb()
 	error("Invalid this type of ZeroMQ socket shouldn't receive data.")
 end
-function new_pub(ctx, loop, err_cb)
-	return new(ctx, zmq.PUB, loop, no_recv_cb, err_cb)
+function meta:pub(err_cb)
+	return create(self, zmq.PUB, no_recv_cb, err_cb)
 end
 
-function new_sub(ctx, loop, msg_cb, err_cb)
-	return new(ctx, zmq.SUB, loop, msg_cb, err_cb)
+function meta:sub(msg_cb, err_cb)
+	return create(self, zmq.SUB, msg_cb, err_cb)
 end
 
-function new_push(ctx, loop, err_cb)
-	return new(ctx, zmq.PUSH, loop, no_recv_cb, err_cb)
+function meta:push(err_cb)
+	return create(self, zmq.PUSH, no_recv_cb, err_cb)
 end
 
-function new_pull(ctx, loop, msg_cb, err_cb)
-	return new(ctx, zmq.PULL, loop, msg_cb, err_cb)
+function meta:pull(msg_cb, err_cb)
+	return create(self, zmq.PULL, msg_cb, err_cb)
 end
 
-function new_pair(ctx, loop, msg_cb, err_cb)
-	return new(ctx, zmq.PAIR, loop, msg_cb, err_cb)
+function meta:pair(msg_cb, err_cb)
+	return create(self, zmq.PAIR, msg_cb, err_cb)
 end
 
-function new_req(ctx, loop, msg_cb, err_cb)
-	return new(ctx, zmq.REQ, loop, msg_cb, err_cb)
+function meta:req(msg_cb, err_cb)
+	return create(self, zmq.REQ, msg_cb, err_cb)
 end
 
-function new_rep(ctx, loop, msg_cb, err_cb)
-	return new(ctx, zmq.REP, loop, msg_cb, err_cb)
+function meta:rep(msg_cb, err_cb)
+	return create(self, zmq.REP, msg_cb, err_cb)
 end
 
-function new_xreq(ctx, loop, msg_cb, err_cb)
-	return new(ctx, zmq.XREQ, loop, msg_cb, err_cb)
+function meta:xreq(msg_cb, err_cb)
+	return create(self, zmq.XREQ, msg_cb, err_cb)
 end
 
-function new_xrep(ctx, loop, msg_cb, err_cb)
-	return new(ctx, zmq.XREP, loop, msg_cb, err_cb)
+function meta:xrep(msg_cb, err_cb)
+	return create(self, zmq.XREP, msg_cb, err_cb)
 end
 
-function wrap(s, loop, msg_cb, err_cb)
-	local s_type = s:getopt(zmq.TYPE)
-	return zworker_wrap(s, s_type, loop, msg_cb, err_cb)
+function meta:term()
+	return self.ctx:term()
+end
+
+function new(loop, io_threads)
+	-- create ZeroMQ context
+	local ctx, err = zmq.init(io_threads)
+	if not ctx then return nil, err end
+
+	return setmetatable({ ctx = ctx, loop = loop }, meta)
 end
 

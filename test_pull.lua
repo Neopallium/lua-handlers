@@ -20,10 +20,10 @@
 
 require("zmq")
 local ev = require'ev'
-local zworker = require'zworker'
+local zsocket = require'handler.zsocket'
 local loop = ev.Loop.default
 
-local ctx = zmq.init(1)
+local ctx = zsocket.new(loop, 1)
 
 -- define PULL worker
 function handle_msg(sock, data)
@@ -31,7 +31,7 @@ function handle_msg(sock, data)
 end
 
 -- create PULL worker
-local zpull = zworker.new_pull(ctx, loop, handle_msg)
+local zpull = ctx:pull(handle_msg)
 
 zpull:connect("tcp://localhost:5555")
 
