@@ -27,6 +27,7 @@ local ev = require"ev"
 local zmq = require"zmq"
 local z_SUBSCRIBE = zmq.SUBSCRIBE
 local z_UNSUBSCRIBE = zmq.UNSUBSCRIBE
+local z_IDENTITY = zmq.IDENTITY
 local z_NOBLOCK = zmq.NOBLOCK
 local z_RCVMORE = zmq.RCVMORE
 
@@ -47,6 +48,10 @@ end
 
 local function worker_unsub(this, filter)
 	return this.socket:setopt(z_UNSUBSCRIBE, filter)
+end
+
+local function worker_identity(this, filter)
+	return this.socket:setopt(z_IDENTITY, filter)
 end
 
 local function worker_bind(this, ...)
@@ -224,6 +229,7 @@ local zworker_mt = {
 send = worker_send,
 setopt = worker_setopt,
 getopt = worker_getopt,
+identity = worker_identity,
 bind = worker_bind,
 connect = worker_connect,
 close = worker_close,
@@ -233,6 +239,7 @@ zworker_mt.__index = zworker_mt
 local zworker_no_send_mt = {
 setopt = worker_setopt,
 getopt = worker_getopt,
+identity = worker_identity,
 bind = worker_bind,
 connect = worker_connect,
 close = worker_close,
@@ -244,6 +251,7 @@ setopt = worker_setopt,
 getopt = worker_getopt,
 sub = worker_sub,
 unsub = worker_unsub,
+identity = worker_identity,
 bind = worker_bind,
 connect = worker_connect,
 close = worker_close,
@@ -255,6 +263,7 @@ local zworker_req_mt = {
 send = worker_send,
 setopt = worker_setopt,
 getopt = worker_getopt,
+identity = worker_identity,
 bind = worker_bind,
 connect = worker_connect,
 close = worker_close,
@@ -265,6 +274,7 @@ local zworker_rep_mt = {
 send = worker_send,
 setopt = worker_setopt,
 getopt = worker_getopt,
+identity = worker_identity,
 bind = worker_bind,
 connect = worker_connect,
 close = worker_close,
