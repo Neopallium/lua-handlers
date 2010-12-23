@@ -28,14 +28,19 @@ local loop = ev.Loop.default
 local ctx = zmq.init(1)
 
 -- define request handler
-function handle_data(sock, data)
-  print("client request: ",data)
-	sock:send("echo: " .. data)
+function handle_msg(sock, data)
+  print("client request: ")
+	for i,part in ipairs(data) do
+		print(i, part)
+	end
+	os.exit()
+	assert(sock:send(data))
 end
 
 -- create response worker
-local zrep = zworker.new_rep(ctx, loop, handle_data)
+local zrep = zworker.new_rep(ctx, loop, handle_msg)
 
+zrep:identity("<rep>")
 zrep:bind("tcp://lo:5555")
 
 loop:loop()

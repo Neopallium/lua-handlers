@@ -28,12 +28,12 @@ local loop = ev.Loop.default
 local ctx = zmq.init(1)
 
 -- define SUB worker
-function handle_data(sock, data)
+function handle_msg(sock, data)
   print(data)
 end
 
 -- create SUB worker
-local zsub = zworker.new_sub(ctx, loop, handle_data)
+local zsub = zworker.new_sub(ctx, loop, handle_msg)
 
 zsub:sub("")
 zsub:connect("tcp://localhost:5555")

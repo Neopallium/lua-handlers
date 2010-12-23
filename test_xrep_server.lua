@@ -3,7 +3,7 @@
 -- Permission is hereby granted, free of charge, to any person obtaining a copy
 -- of this software and associated documentation files (the "Software"), to deal
 -- in the Software without restriction, including without limitation the rights
--- to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+-- to use, copy, modify, merge, replish, distribute, sublicense, and/or sell
 -- copies of the Software, and to permit persons to whom the Software is
 -- furnished to do so, subject to the following conditions:
 --
@@ -27,22 +27,20 @@ local loop = ev.Loop.default
 
 local ctx = zmq.init(1)
 
--- define PAIR worker
+-- define request handler
 function handle_msg(sock, data)
-  print(data)
+  print("client request: ")
+	for i,part in ipairs(data) do
+		print(i, part)
+	end
+	sock:send(data)
 end
 
--- create PAIR worker
-local zpair = zworker.new_pair(ctx, loop, handle_msg)
+-- create response worker
+local zxrep = zworker.new_xrep(ctx, loop, handle_msg)
 
-zpair:connect("tcp://localhost:5555")
-
-local function io_in_cb()
-	local line = io.read("*l")
-	zpair:send(line)
-end
-local io_in = ev.IO.new(io_in_cb, 0, ev.READ)
-io_in:start(loop)
+zxrep:identity("<xrep>")
+zxrep:bind("tcp://lo:5555")
 
 loop:loop()
 

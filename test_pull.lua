@@ -28,12 +28,12 @@ local loop = ev.Loop.default
 local ctx = zmq.init(1)
 
 -- define PULL worker
-function handle_data(sock, data)
+function handle_msg(sock, data)
   print(data)
 end
 
 -- create PULL worker
-local zpull = zworker.new_pull(ctx, loop, handle_data)
+local zpull = zworker.new_pull(ctx, loop, handle_msg)
 
 zpull:connect("tcp://localhost:5555")
 

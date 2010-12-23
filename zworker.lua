@@ -30,9 +30,12 @@ local z_UNSUBSCRIBE = zmq.UNSUBSCRIBE
 local z_IDENTITY = zmq.IDENTITY
 local z_NOBLOCK = zmq.NOBLOCK
 local z_RCVMORE = zmq.RCVMORE
+local z_SNDMORE = zmq.SNDMORE
 
-local default_send_max = 2
-local default_recv_max = 2
+local mark_SNDMORE = {}
+
+local default_send_max = 10
+local default_recv_max = 10
 
 local function worker_getopt(this, ...)
 	return this.socket:getopt(...)
@@ -84,60 +87,79 @@ local function worker_handle_error(this, loc, err)
 	worker_close(this)
 end
 
+local function worker_enable_idle(this, enable)
+	if enable == this.idle_enabled then return end
+	this.idle_enabled = enable
+	if enable then
+		this.io_idle:start(this.loop)
+	else
+		this.io_idle:stop(this.loop)
+	end
+end
+
 local function worker_send_data(this)
 	local send_max = this.send_max
 	local count = 0
 	local s = this.socket
-	local buf = this.send_queue
+	local queue = this.send_queue
 
 	repeat
-		local data = buf[1]
-		local sent, err = s:send(data, z_NOBLOCK)
+		local data = queue[1]
+		local flags = 0
+		-- check for send more marker
+		if queue[2] == mark_SNDMORE then
+			flags = z_SNDMORE
+		end
+		local sent, err = s:send(data, flags + z_NOBLOCK)
 		if not sent then
 			-- got timeout error block writes.
 			if err == 'timeout' then
 				-- enable write IO callback.
+				this.send_enabled = false
 				if not this.send_blocked then
 					this.io_send:start(this.loop)
 					this.send_blocked = true
-					this.send_enabled = false
 				end
 			else
 				-- socket error
 				worker_handle_error(this, 'send', err)
 			end
-			return false, err
+			return
 		else
 			-- pop sent data from queue
-			tremove(buf, 1)
+			tremove(queue, 1)
+			-- pop send more marker
+			if flags == z_SNDMORE then
+				tremove(queue, 1)
+			else
+				-- finished whole message.
+				if this._has_state then
+print('switch to receiving state.')
+					-- switch to receiving state.
+					this.state = "RECV_ONLY"
+					this.recv_enabled = true
+					-- make sure idle worker is running.
+					worker_enable_idle(this, true)
+				end
+			end
 			-- check if queue is empty
-			if #buf == 0 then
-				this.send_blocked = false
+			if #queue == 0 then
 				this.send_enabled = false
-				break;
+				if this.send_blocked then
+					this.io_send:stop(this.loop)
+					this.send_blocked = false
+				end
+				-- finished queue is empty
+				return
 			end
 		end
 		count = count + 1
 	until count >= send_max
-	return true
-end
-
-local function worker_enable_receive(this, enable)
-	if enable then
-		if not this.recv_blocked then
-			this.recv_enabled = false
-			if not this.idle_enabled then
-				this.io_idle:start(this.loop)
-				this.idle_enabled = true
-			end
-		end
-	else
-		if this.recv_blocked then
-			this.io_recv:stop(this.loop)
-			this.recv_blocked = false
-		end
-		this.recv_enabled = false
-	end
+	-- hit max send and still have more data to send
+	this.send_enabled = true
+	-- make sure idle worker is running.
+	worker_enable_idle(this, true)
+	return
 end
 
 local function worker_receive_data(this)
@@ -145,8 +167,8 @@ local function worker_receive_data(this)
 	local count = 0
 	local s = this.socket
 	local worker = this.worker
-	local buf = this.recv_part
-	this.recv_part = ''
+	local msg = this.recv_msg
+	this.recv_msg = nil
 
 	repeat
     local data, err = s:recv(z_NOBLOCK)
@@ -154,78 +176,116 @@ local function worker_receive_data(this)
 			-- check for blocking.
 			if err == 'timeout' then
 				-- check if we received a partial message.
-				if s:getopt(z_RCVMORE) == 1 then
-					this.recv_part = buf
-				end
+				this.recv_msg = msg
 				-- recv blocked
+				this.recv_enabled = false
 				if not this.recv_blocked then
 					this.io_recv:start(this.loop)
 					this.recv_blocked = true
-					this.recv_enabled = false
 				end
 			else
 				-- socket error
 				worker_handle_error(this, 'receive', err)
 			end
-			return false, err
+			return
 		end
-		-- handle data.
-		buf = buf .. data
-		if s:getopt(z_RCVMORE) == 0 then
-			-- pass read data to worker
-			err = worker.handle_data(this, buf)
+		-- check for more message parts.
+		local more = s:getopt(z_RCVMORE)
+		if msg ~= nil then
+			tinsert(msg, data)
+		else
+			if more == 1 then
+				-- create multipart message
+				msg = { data }
+			else
+				-- simple one part message
+				msg = data
+			end
+		end
+		if more == 0 then
+			-- finished receiving whole message
+			if this._has_state then
+				-- switch to sending state.
+				this.state = "SEND_ONLY"
+			end
+			-- pass read message to worker
+			err = worker.handle_msg(this, msg)
 			if err then
 				-- worker error
 				worker_handle_error(this, 'worker', err)
-				return false, err
+				return
 			end
-			buf = ''
+			-- we are finished if the state is stil SEND_ONLY
+			if this._has_state and this.state == "SEND_ONLY" then
+				this.recv_enabled = false
+				return
+			end
+			msg = nil
 		end
 		count = count + 1
 	until count >= recv_max
 
-	return true
+	-- save any partial message.
+	this.recv_msg = msg
+
+	-- hit max receive and we are not blocked on receiving.
+	this.recv_enabled = true
+	-- make sure idle worker is running.
+	worker_enable_idle(this, true)
+
 end
 
-local function worker_send(this, data, multipart)
-	local buf = this.send_queue
-	local part = this.send_part
-	-- check if we already have a partial message to send
-	if part then
-		-- pre-append partial data to new data.
-		data = part .. data
-		this.send_part = nil
+local function _queue_msg(queue, msg)
+	local parts = #msg
+	-- queue first part of message
+	tinsert(queue, msg[1])
+	for i=2,parts do
+		-- queue more marker flag
+		tinsert(queue, mark_SNDMORE)
+		-- queue part of message
+		tinsert(queue, msg[i])
+	end
+end
+
+local function worker_send(this, data, more)
+	local queue = this.send_queue
+	-- check if we are in receiving-only state.
+	if this._has_state and this.state == "RECV_ONLY" then
+		return false, "Can't send when in receiving state."
+	end
+	if type(data) == 'table' then
+		-- queue multipart message
+		_queue_msg(queue, data)
+	else
+		-- queue simple data.
+		tinsert(queue, data)
 	end
 	-- check if there is more data to send
-	if multipart then
-		-- don't put partial message data into send queue.
-		this.send_part = data
-		-- TODO: improve handling of multipart messages.
-		return true
-	else
-		-- got full message add to send queue
-		tinsert(buf, data)
+	if more then
+		-- queue a marker flag
+		tinsert(queue, mark_SNDMORE)
 	end
+	-- try sending data now.
 	if not this.send_blocked then
-		return worker_send_data(this)
+		worker_send_data(this)
 	end
-	return true
+	return true, nil
 end
 
 local function worker_handle_idle(this)
-	if this.send_enabled then
-		worker_send_data(this)
-	end
 	if this.recv_enabled then
 		worker_receive_data(this)
 	end
+	if this.send_enabled then
+		worker_send_data(this)
+	end
 	if not this.send_enabled and not this.recv_enabled then
-		this.idle_enabled = false
-		this.io_idle:stop(this.loop)
+		worker_enable_idle(this, false)
 	end
 end
 
 local zworker_mt = {
+_has_state = false,
 send = worker_send,
 setopt = worker_setopt,
 getopt = worker_getopt,
@@ -237,6 +297,7 @@ close = worker_close,
 zworker_mt.__index = zworker_mt
 
 local zworker_no_send_mt = {
+_has_state = false,
 setopt = worker_setopt,
 getopt = worker_getopt,
 identity = worker_identity,
@@ -247,6 +308,7 @@ close = worker_close,
 zworker_no_send_mt.__index = zworker_no_send_mt
 
 local zworker_sub_mt = {
+_has_state = false,
 setopt = worker_setopt,
 getopt = worker_getopt,
 sub = worker_sub,
@@ -258,8 +320,8 @@ close = worker_close,
 }
 zworker_sub_mt.__index = zworker_sub_mt
 
--- TODO: fix req/rep
-local zworker_req_mt = {
+local zworker_state_mt = {
+_has_state = true,
 send = worker_send,
 setopt = worker_setopt,
 getopt = worker_getopt,
@@ -268,36 +330,28 @@ bind = worker_bind,
 connect = worker_connect,
 close = worker_close,
 }
-zworker_req_mt.__index = zworker_req_mt
-
-local zworker_rep_mt = {
-send = worker_send,
-setopt = worker_setopt,
-getopt = worker_getopt,
-identity = worker_identity,
-bind = worker_bind,
-connect = worker_connect,
-close = worker_close,
-}
-zworker_rep_mt.__index = zworker_rep_mt
+zworker_state_mt.__index = zworker_state_mt
 
 local type_info = {
-	-- simple fixed state workers
+	-- publish/subscribe workers
 	[zmq.PUB]  = { mt = zworker_mt, enable_recv = false, recv = false, send = true },
 	[zmq.SUB]  = { mt = zworker_sub_mt, enable_recv = true,  recv = true, send = false },
+	-- push/pull workers
 	[zmq.PUSH] = { mt = zworker_mt, enable_recv = false, recv = false, send = true },
 	[zmq.PULL] = { mt = zworker_no_send_mt, enable_recv = true,  recv = true, send = false },
+	-- two-way pair worker
 	[zmq.PAIR] = { mt = zworker_mt, enable_recv = true,  recv = true, send = true },
 	-- request/response workers
-	[zmq.REQ]  = { mt = zworker_req_mt, enable_recv = false, recv = true, send = true },
-	[zmq.REP]  = { mt = zworker_rep_mt, enable_recv = true,  recv = true, send = true },
-	[zmq.XREQ] = { mt = zworker_req_mt, enable_recv = false, recv = true, send = true },
-	[zmq.XREP] = { mt = zworker_rep_mt, enable_recv = true,  recv = true, send = true },
+	[zmq.REQ]  = { mt = zworker_state_mt, enable_recv = false, recv = true, send = true },
+	[zmq.REP]  = { mt = zworker_state_mt, enable_recv = true,  recv = true, send = true },
+	-- extended request/response workers
+	[zmq.XREQ] = { mt = zworker_mt, enable_recv = true, recv = true, send = true },
+	[zmq.XREP] = { mt = zworker_mt, enable_recv = true,  recv = true, send = true },
 }
 
-local function zworker_wrap(s, s_type, loop, data_cb, err_cb)
+local function zworker_wrap(s, s_type, loop, msg_cb, err_cb)
 	local tinfo = type_info[s_type]
-	worker = { handle_data = data_cb, handle_error = err_cb}
+	worker = { handle_msg = msg_cb, handle_error = err_cb}
 	-- create zworker
 	local this = {
 		s_type = x_type,
@@ -315,13 +369,8 @@ local function zworker_wrap(s, s_type, loop, data_cb, err_cb)
 	-- create IO watcher.
 	if tinfo.send then
 		local send_cb = function()
-			this.send_enabled = true
-			this.io_send:stop(this.loop)
-			this.send_blocked = false
-			if not this.idle_enabled then
-				this.io_idle:start(this.loop)
-				this.idle_enabled = true
-			end
+			-- try sending data.
+			worker_send_data(this)
 		end
 		this.io_send = ev.IO.new(send_cb, fd, ev.WRITE)
 		this.send_blocked = false
@@ -330,17 +379,11 @@ local function zworker_wrap(s, s_type, loop, data_cb, err_cb)
 	end
 	if tinfo.recv then
 		local recv_cb = function()
-			this.recv_enabled = true
-			this.io_recv:stop(this.loop)
-			this.recv_blocked = false
-			if not this.idle_enabled then
-				this.io_idle:start(this.loop)
-				this.idle_enabled = true
-			end
+			-- try receiving data.
+			worker_receive_data(this)
 		end
 		this.io_recv = ev.IO.new(recv_cb, fd, ev.READ)
 		this.recv_blocked = false
-		this.recv_part = ''
 		this.recv_max = default_recv_max
 		if tinfo.enable_recv then
 			this.io_recv:start(loop)
@@ -358,9 +401,9 @@ end
 
 module(...)
 
-function new(ctx, s_type, loop, data_cb, err_cb)
+function new(ctx, s_type, loop, msg_cb, err_cb)
 	local s = ctx:socket(s_type)
-	return zworker_wrap(s, s_type, loop, data_cb, err_cb)
+	return zworker_wrap(s, s_type, loop, msg_cb, err_cb)
 end
 
 local function no_recv_cb()
@@ -372,10 +415,10 @@ function new_pub(ctx, loop)
 	return zworker_wrap(s, s_type, loop, no_recv_cb)
 end
 
-function new_sub(ctx, loop, data_cb, err_cb)
+function new_sub(ctx, loop, msg_cb, err_cb)
 	local s_type = zmq.SUB
 	local s = ctx:socket(s_type)
-	return zworker_wrap(s, s_type, loop, data_cb, err_cb)
+	return zworker_wrap(s, s_type, loop, msg_cb, err_cb)
 end
 
 function new_push(ctx, loop)
@@ -384,44 +427,44 @@ function new_push(ctx, loop)
 	return zworker_wrap(s, s_type, loop, no_recv_cb)
 end
 
-function new_pull(ctx, loop, data_cb, err_cb)
+function new_pull(ctx, loop, msg_cb, err_cb)
 	local s_type = zmq.PULL
 	local s = ctx:socket(s_type)
-	return zworker_wrap(s, s_type, loop, data_cb, err_cb)
+	return zworker_wrap(s, s_type, loop, msg_cb, err_cb)
 end
 
-function new_pair(ctx, loop, data_cb, err_cb)
+function new_pair(ctx, loop, msg_cb, err_cb)
 	local s_type = zmq.PAIR
 	local s = ctx:socket(s_type)
-	return zworker_wrap(s, s_type, loop, data_cb, err_cb)
+	return zworker_wrap(s, s_type, loop, msg_cb, err_cb)
 end
 
-function new_req(ctx, loop, response_cb, err_cb)
+function new_req(ctx, loop, msg_cb, err_cb)
 	local s_type = zmq.REQ
 	local s = ctx:socket(s_type)
-	return zworker_wrap(s, s_type, loop, response_cb, err_cb)
+	return zworker_wrap(s, s_type, loop, msg_cb, err_cb)
 end
 
-function new_rep(ctx, loop, request_cb, err_cb)
+function new_rep(ctx, loop, msg_cb, err_cb)
 	local s_type = zmq.REP
 	local s = ctx:socket(s_type)
-	return zworker_wrap(s, s_type, loop, request_cb, err_cb)
+	return zworker_wrap(s, s_type, loop, msg_cb, err_cb)
 end
 
-function new_xreq(ctx, loop, response_cb, err_cb)
+function new_xreq(ctx, loop, msg_cb, err_cb)
 	local s_type = zmq.XREQ
 	local s = ctx:socket(s_type)
-	return zworker_wrap(s, s_type, loop, response_cb, err_cb)
+	return zworker_wrap(s, s_type, loop, msg_cb, err_cb)
 end
 
-function new_xrep(ctx, loop, request_cb, err_cb)
+function new_xrep(ctx, loop, msg_cb, err_cb)
 	local s_type = zmq.XREP
 	local s = ctx:socket(s_type)
-	return zworker_wrap(s, s_type, loop, request_cb, err_cb)
+	return zworker_wrap(s, s_type, loop, msg_cb, err_cb)
 end
 
-function wrap(s, loop, data_cb, err_cb)
+function wrap(s, loop, msg_cb, err_cb)
 	local s_type = s:getopt(zmq.TYPE)
-	return zworker_wrap(s, s_type, loop, data_cb, err_cb)
+	return zworker_wrap(s, s_type, loop, msg_cb, err_cb)
 end
 

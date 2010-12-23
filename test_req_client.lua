@@ -28,18 +28,23 @@ local loop = ev.Loop.default
 local ctx = zmq.init(1)
 
 -- define response handler
-function handle_data(sock, data)
-  print("server response: ", data)
+function handle_msg(sock, data)
+  print("server response: ")
+	for i,part in ipairs(data) do
+		print(i, part)
+	end
 end
 
 -- create PAIR worker
-local zreq = zworker.new_req(ctx, loop, handle_data)
+local zreq = zworker.new_req(ctx, loop, handle_msg)
 
+zreq:identity("<req>")
 zreq:connect("tcp://localhost:5555")
 
 local function io_in_cb()
 	local line = io.read("*l")
-	zreq:send(line)
+	-- send request message.
+	assert(zreq:send({"request:", line}))
 end
 local io_in = ev.IO.new(io_in_cb, 0, ev.READ)
 io_in:start(loop)

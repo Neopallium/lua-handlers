@@ -28,12 +28,12 @@ local loop = ev.Loop.default
 local ctx = zmq.init(1)
 
 -- define PAIR worker
-function handle_data(sock, data)
+function handle_msg(sock, data)
   print(data)
 end
 
 -- create PAIR worker
-local zpair = zworker.new_pair(ctx, loop, handle_data)
+local zpair = zworker.new_pair(ctx, loop, handle_msg)
 
 zpair:bind("tcp://lo:5555")
 
