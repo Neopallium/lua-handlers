@@ -33,7 +33,6 @@ function handle_msg(sock, data)
 	for i,part in ipairs(data) do
 		print(i, part)
 	end
-	os.exit()
 	assert(sock:send(data))
 end
 
