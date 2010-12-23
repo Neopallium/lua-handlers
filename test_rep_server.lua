@@ -27,10 +27,7 @@ local ctx = zmq.init(1)
 
 -- define request handler
 function handle_msg(sock, data)
-  print("client request: ")
-	for i,part in ipairs(data) do
-		print(i, part)
-	end
+  print("client request:\n", unpack(data))
 	assert(sock:send(data))
 end
 

@@ -134,7 +134,6 @@ local function worker_send_data(this)
 			else
 				-- finished whole message.
 				if this._has_state then
-print('switch to receiving state.')
 					-- switch to receiving state.
 					this.state = "RECV_ONLY"
 					this.recv_enabled = true
@@ -402,65 +401,51 @@ end
 module(...)
 
 function new(ctx, s_type, loop, msg_cb, err_cb)
-	local s = ctx:socket(s_type)
+	-- create ZeroMQ socket
+	local s, err = ctx:socket(s_type)
+	if not s then return nil, err end
+
+	-- wrap socket.
 	return zworker_wrap(s, s_type, loop, msg_cb, err_cb)
 end
 
 local function no_recv_cb()
 	error("Invalid this type of ZeroMQ socket shouldn't receive data.")
 end
-function new_pub(ctx, loop)
-	local s_type = zmq.PUB
-	local s = ctx:socket(s_type)
-	return zworker_wrap(s, s_type, loop, no_recv_cb)
+function new_pub(ctx, loop, err_cb)
+	return new(ctx, zmq.PUB, loop, no_recv_cb, err_cb)
 end
 
 function new_sub(ctx, loop, msg_cb, err_cb)
-	local s_type = zmq.SUB
-	local s = ctx:socket(s_type)
-	return zworker_wrap(s, s_type, loop, msg_cb, err_cb)
+	return new(ctx, zmq.SUB, loop, msg_cb, err_cb)
 end
 
-function new_push(ctx, loop)
-	local s_type = zmq.PUSH
-	local s = ctx:socket(s_type)
-	return zworker_wrap(s, s_type, loop, no_recv_cb)
+function new_push(ctx, loop, err_cb)
+	return new(ctx, zmq.PUSH, loop, no_recv_cb, err_cb)
 end
 
 function new_pull(ctx, loop, msg_cb, err_cb)
-	local s_type = zmq.PULL
-	local s = ctx:socket(s_type)
-	return zworker_wrap(s, s_type, loop, msg_cb, err_cb)
+	return new(ctx, zmq.PULL, loop, msg_cb, err_cb)
 end
 
 function new_pair(ctx, loop, msg_cb, err_cb)
-	local s_type = zmq.PAIR
-	local s = ctx:socket(s_type)
-	return zworker_wrap(s, s_type, loop, msg_cb, err_cb)
+	return new(ctx, zmq.PAIR, loop, msg_cb, err_cb)
 end
 
 function new_req(ctx, loop, msg_cb, err_cb)
-	local s_type = zmq.REQ
-	local s = ctx:socket(s_type)
-	return zworker_wrap(s, s_type, loop, msg_cb, err_cb)
+	return new(ctx, zmq.REQ, loop, msg_cb, err_cb)
 end
 
 function new_rep(ctx, loop, msg_cb, err_cb)
-	local s_type = zmq.REP
-	local s = ctx:socket(s_type)
-	return zworker_wrap(s, s_type, loop, msg_cb, err_cb)
+	return new(ctx, zmq.REP, loop, msg_cb, err_cb)
 end
 
 function new_xreq(ctx, loop, msg_cb, err_cb)
-	local s_type = zmq.XREQ
-	local s = ctx:socket(s_type)
-	return zworker_wrap(s, s_type, loop, msg_cb, err_cb)
+	return new(ctx, zmq.XREQ, loop, msg_cb, err_cb)
 end
 
 function new_xrep(ctx, loop, msg_cb, err_cb)
-	local s_type = zmq.XREP
-	local s = ctx:socket(s_type)
-	return zworker_wrap(s, s_type, loop, msg_cb, err_cb)
+	return new(ctx, zmq.XREP, loop, msg_cb, err_cb)
 end
 
 function wrap(s, loop, msg_cb, err_cb)

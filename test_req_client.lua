@@ -27,10 +27,7 @@ local ctx = zmq.init(1)
 
 -- define response handler
 function handle_msg(sock, data)
-  print("server response: ")
-	for i,part in ipairs(data) do
-		print(i, part)
-	end
+  print("server response:\n", unpack(data))
 end
 
 -- create PAIR worker
