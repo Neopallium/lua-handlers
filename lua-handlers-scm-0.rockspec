@@ -3,12 +3,12 @@
 package	= 'lua-handlers'
 version	= 'scm-0'
 source	= {
-	url	= 'git://github.com/Neopallium/lua-ev-workers.git'
+	url	= 'git://github.com/Neopallium/lua-handlers.git'
 }
 description	= {
 	summary	= "Socket & ZeroMQ handler classes that wrap lua-ev/lua-zmq/luasocket.",
 	detailed	= '',
-	homepage	= 'https://github.com/Neopallium/lua-ev-workers',
+	homepage	= 'https://github.com/Neopallium/lua-handlers',
 	license	= 'MIT',
 }
 dependencies = {
