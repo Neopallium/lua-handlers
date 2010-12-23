@@ -66,4 +66,3 @@ local server = new_server(port, new_tcp_client)
 
 loop:loop()
 
-print('exit')

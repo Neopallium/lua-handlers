@@ -20,8 +20,6 @@
 
 require("zmq")
 local ev = require'ev'
-local ioworker = require'ioworker'
-local acceptor = require'acceptor'
 local zworker = require'zworker'
 local loop = ev.Loop.default
 
