@@ -24,6 +24,10 @@ build	= {
 			['handler.acceptor'] = "handler/acceptor.lua",
 			['handler.nsocket']  = "handler/nsocket.lua",
 			['handler.zsocket']  = "handler/zsocket.lua",
+			['handler.http.client']  = "handler/http/client.lua",
+			['handler.http.client.request']  = "handler/http/client/request.lua",
+			['handler.http.connection']  = "handler/http/connection.lua",
+			['handler.http.headers']  = "handler/http/headers.lua",
 		}
 	}
 }
