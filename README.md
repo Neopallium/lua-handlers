@@ -8,10 +8,15 @@ Installing
 ----------
 
 curl -O "https://github.com/brimworks/lua-ev/raw/master/rockspec/lua-ev-scm-1.rockspec"
+
 luarocks install lua-ev-scm-1.rockspec
+
 curl -O "https://github.com/iamaleksey/lua-zmq/raw/master/rockspecs/lua-zmq-scm-0.rockspec"
+
 luarocks install lua-zmq-scm-0.rockspec
+
 curl -O "https://github.com/Neopallium/lua-handlers/raw/master/lua-handlers-scm-0.rockspec"
+
 luarocks install lua-handlers-scm-0.rockspec
 
 
