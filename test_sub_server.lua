@@ -25,19 +25,16 @@ local loop = ev.Loop.default
 
 local ctx = zsocket.new(loop, 1)
 
-local zpub = ctx:pub()
-
-zpub:bind("tcp://lo:5555")
-zpub:connect("tcp://localhost:5556") -- you can bind & connect from the same zmq socket.
-
-local msg_id = 1
-
-local function timer_cb()
-	zpub:send(tostring(msg_id))
-  msg_id = msg_id + 1
+-- define SUB worker
+function handle_msg(sock, data)
+  print(data)
 end
-local timer = ev.Timer.new(timer_cb, 0.5, 0.5)
-timer:start(loop)
+
+-- create SUB worker
+local zsub = ctx:sub(handle_msg)
+
+zsub:sub("")
+zsub:bind("tcp://lo:5556")
 
 loop:loop()
 
