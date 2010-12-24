@@ -18,8 +18,8 @@
 -- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 -- THE SOFTWARE.
 
-local ev = require'ev'
 local nsocket = require'handler.nsocket'
+local ev = require'ev'
 local loop = ev.Loop.default
 
 local udp_client_mt = {

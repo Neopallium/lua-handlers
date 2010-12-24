@@ -18,11 +18,10 @@
 -- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 -- THE SOFTWARE.
 
-require("zmq")
-local ev = require'ev'
 local nsocket = require'handler.nsocket'
 local acceptor = require'handler.acceptor'
 local zsocket = require'handler.zsocket'
+local ev = require'ev'
 local loop = ev.Loop.default
 
 local ctx = zsocket.new(loop, 1)
