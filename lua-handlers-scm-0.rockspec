@@ -15,6 +15,7 @@ dependencies = {
 	'lua >= 5.1',
 	'lua-zmq',
 	'lua-ev',
+	'lua-http-parser',
 }
 build	= {
 	type		= 'none',
