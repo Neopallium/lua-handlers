@@ -20,12 +20,36 @@
 
 local print = print
 local pairs = pairs
+local format = string.format
 local setmetatable = setmetatable
 local assert = assert
+local tconcat = table.concat
 
 local ev = require"ev"
 local nsocket = require"handler.nsocket"
 local lhp = require"http.parser"
+
+--
+-- Chunked Transfer Encoding filter
+--
+local function chunked()
+	local is_eof = false
+	return function(chunk)
+		if chunk == "" then
+			return ""
+		elseif chunk then
+			local len = #chunk
+			-- prepend chunk length
+			return format('%x\r\n', len) .. chunk .. '\r\n'
+		elseif not is_eof then
+			-- nil chunk, mark stream EOF
+			is_eof = true
+			-- return zero-length chunk.
+			return '0\r\n\r\n'
+		end
+		return nil
+	end
+end
 
 local client_mt = {}
 client_mt.__index = client_mt
@@ -76,32 +100,69 @@ function client_mt:queue_request(req)
 	local data
 	-- gen: Request-Line
 	data = req.method .. " " .. req.path .. " " .. req.http_version .. "\r\n"
+	-- preprocess request body
+	self:preprocess_body()
 	-- gen: Request-Headers
 	data = gen_headers(data, req.headers) .. "\r\n"
 	-- send request.
+--print('--- start request headers:')
+--print(data)
 	self.sock:send(data)
-	-- check for a request body
-	local body = req.body
-	if body then
-		-- check for "Expect: 100-continue" header
-		local expect = req.headers.Expect
-		if expect:find('100-continue', 1, true) then
-			self.expect_100 = true
-			-- TODO: add timer to force sending of request body after about 1-5 seconds
-			return
-		end
-		-- send request body now.
+--print('--- end request headers:')
+	-- send request body
+	if not self.expect_100 then
 		self:send_body()
 	end
+end
+
+-- this need to be called before writting headers.
+function client_mt:preprocess_body()
+	local req = self.cur_req
+	local body = req.body
+	-- if no request body, then we are finished.
+	if not body then return end
+
+	-- set "Expect: 100-continue" header
+	req.headers.Expect = "100-continue"
+	self.expect_100 = true
+
+	local body_type = req.body_type
+	local src
+	if body_type == 'string' then
+		src = ltn12.source.string(body)
+	elseif body_type == 'object' then
+		src = body:get_source()
+	else
+		-- body is the LTN12 source
+		src = body
+	end
+
+	-- if no Content-Length, then use chunked transfer encoding.
+	if not req.headers['Content-Length'] then
+		req.headers['Transfer-Encoding'] = 'chunked'
+		-- add chunked filter.
+		src = ltn12.filter.chain(src, chunked())
+	end
+
+	self.body_src = src
 end
 
 function client_mt:send_body()
 	local req = self.cur_req
 	local body = req.body
-	if not self.sent_request_body then
-		self.sent_request_body = true
-		self.sock:send(body)
-	end
+	-- if no request body or body has already been sent, then return
+	if self.sent_request_body then return end
+	self.sent_request_body = true
+
+	local data = {}
+	local sink = ltn12.sink.table(data)
+	ltn12.pump.all(self.body_src, sink)
+	data = tconcat(data)
+
+--print('--- start request body:')
+--print(data)
+--print('--- end request body:')
+	self.sock:send(data)
 end
 
 local function call_callback(req, cb, ...)

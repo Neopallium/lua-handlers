@@ -31,6 +31,42 @@ local new_headers = http_headers.new
 local request_mt = {}
 request_mt.__index = request_mt
 
+local function process_request_body(req)
+	local body = req.body
+	-- if no request body, then we don't need to do anything.
+	if not body then return end
+
+	-- default method to POST when there is a request body.
+	req.method = req.method or 'POST'
+
+	-- check if request body is a complex object.
+	local b_type = type(body)
+	if b_type == 'table' then
+		assert(body.is_content_object, "Can't encode generic tables.")
+		-- if request body is a form
+		if body.object_type == 'form' then
+			-- force method to POST and set headers Content-Type & Content-Length
+			req.method = 'POST'
+			req.headers['Content-Type'] = body:get_content_type()
+		end
+		req.headers['Content-Length'] = body:get_content_length()
+		-- mark request body as an object
+		req.body_type = 'object'
+	elseif b_type == 'string' then
+		-- simple string body
+		req.headers['Content-Length'] = #body
+		-- mark request body as an simple string
+		req.body_type = 'string'
+	elseif b_type == 'function' then
+		-- if the body is a function it should be a LTN12 source
+		-- mark request body as an source
+		req.body_type = 'source'
+	else
+		assert(false, "Unsupported request body type: " .. b_type)
+	end
+
+end
+
 module'handler.http.client.request'
 
 function new(client, req, body)
@@ -77,11 +113,6 @@ function new(client, req, body)
 	-- validate request.
 	assert(req.host, "request missing host.")
 
-	-- if method is not set, then use POST if there is a body to send.
-	if not req.method then
-		req.method = req.body and 'POST' or 'GET'
-	end
-
 	-- check if Host header needs to be set.
 	if not req.headers.Host and req.http_version == "HTTP/1.1" then
 		local host = req.host
@@ -92,6 +123,14 @@ function new(client, req, body)
 		end
 		req.headers.Host = host
 	end
+
+	--
+	-- Process request body.
+	--
+	process_request_body(req)
+
+	-- default to GET method.
+	req.method = req.method or 'GET'
 
 	req = setmetatable(req, request_mt)
 	-- get http connection.

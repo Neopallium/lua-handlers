@@ -19,6 +19,8 @@
 -- THE SOFTWARE.
 
 local httpclient = require'handler.http.client'
+local form = require'handler.http.form'
+local file = require'handler.http.file'
 local ev = require'ev'
 local loop = ev.Loop.default
 local tremove = table.remove
@@ -46,17 +48,18 @@ local function on_finished(req, resp)
 	loop:unloop()
 end
 
-local post_data = [[
-this is a test
-]]
+local post_data = form.new{
+first_name = "tester",
+last_name = "smith",
+RequestMethod="RemoveSessions",
+SceneID="51985476-fc16-4d25-aadd-be67a2e0f980",
+file = file.new('data.txt')
+}
 
 local req = client:request{
 	method = 'POST',
 	host = 'localhost',
 	path = '/',
-	headers = {
-		["Expect"] = "100-continue",
-	},
 	body = post_data,
 	on_response = on_response,
 	on_data = on_data,

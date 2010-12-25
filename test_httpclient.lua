@@ -23,7 +23,9 @@ local ev = require'ev'
 local loop = ev.Loop.default
 local tremove = table.remove
 
-local client = httpclient.new(loop,{ user_agent = "HTTPClient tester" })
+local client = httpclient.new(loop,{
+	user_agent = "HTTPClient tester",
+})
 
 local urls = arg
 local req

@@ -18,50 +18,52 @@
 -- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 -- THE SOFTWARE.
 
-local httpclient = require'handler.http.client'
-local ev = require'ev'
-local loop = ev.Loop.default
-local tremove = table.remove
+local print = print
+local setmetatable = setmetatable
+local assert = assert
+local io = io
+local tconcat = table.concat
+local ltn12 = require'ltn12'
 
-local client = httpclient.new(loop,{
-	user_agent = "HTTPClient tester"
-})
+local file_mt = { is_content_object = true, object_type = 'file' }
+file_mt.__index = file_mt
 
-local function on_response(req, resp)
-	print('---- start response headers: status code =' .. resp.status_code)
-	for k,v in pairs(resp.headers) do
-		print(k .. ": " .. v)
-	end
-	print('---- end response headers')
+function file_mt:get_content_type()
+	return "application/octet-stream"
 end
 
-local function on_data(req, resp, data)
-	print('---- start response body')
-	io.write(data)
-	print('---- end response body')
+function file_mt:get_content_length()
+	local file = self.file
+	local cur = file:seek()
+	local size = file:seek('end')
+	file:seek('set', cur)
+	return size
 end
 
-local function on_finished(req, resp)
-	print('====================== Finished POST request =================')
-	loop:unloop()
+function file_mt:get_source()
+	return self.src
 end
 
-local post_data = [[
-this is a test
-]]
+function file_mt:get_content()
+	local data = {}
+	local src = self:get_source()
+	local sink = ltn12.sink.table(data)
+	ltn12.pump.all(src, sink)
+	return tconcat(data)
+end
 
-local req = client:request{
-	method = 'POST',
-	host = 'localhost',
-	path = '/',
-	headers = {
-		["Expect"] = "100-continue",
-	},
-	body = post_data,
-	on_response = on_response,
-	on_data = on_data,
-	on_finished = on_finished,
-}
+module'handler.http.file'
 
-loop:loop()
+function new(filename)
+	local file = io.open(filename)
+	local size = file:seek('end')
+	file:seek('set', 0)
+	local self = {
+		filename = filename,
+		file = file,
+		size = size,
+		src = ltn12.source.file(file)
+	}
+	return setmetatable(self, file_mt)
+end
 
