@@ -100,6 +100,15 @@ _receive_data = function(this)
 	repeat
 		local data, err, part = sock:receive(read_len)
 		if err and err ~= 'timeout' then
+			-- check for partial data
+			if part and #part > 0 then
+				local err = worker:handle_data(part)
+				if err then
+					-- worker error
+					this:handle_error('worker', err)
+					return false, err
+				end
+			end
 			-- socket error
 			this:handle_error('receive', err)
 			return false, err
