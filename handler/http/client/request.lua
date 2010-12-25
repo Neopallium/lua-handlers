@@ -24,6 +24,7 @@ local tostring = tostring
 local print = print
 local assert = assert
 local type = type
+local pairs = pairs
 local http_headers = require'handler.http.headers'
 local new_headers = http_headers.new
 
@@ -39,6 +40,14 @@ function new(client, req, body)
 		req.headers = new_headers(req.headers)
 		-- default port
 		req.port = tonumber(req.port) or 80
+	end
+
+	-- copy common headers from client.
+	local headers = req.headers
+	for name,val in pairs(client.headers) do
+		if not headers[name] then
+			headers[name] = val
+		end
 	end
 
 	-- default to version 1.1

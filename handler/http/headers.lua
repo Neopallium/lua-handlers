@@ -91,7 +91,13 @@ local headers_mt = {}
 
 headers_mt.__index = function(headers, name)
 	-- normalize header name
-	local norm = normalized[name:lower()] or name
+	local norm = normalized[name:lower()]
+	-- if normalized name is nil or the same as name
+	if norm == nil or norm == name then
+		-- then no value exists for this header.
+		return nil
+	end
+	-- get normalized header's value.
 	return rawget(headers, norm)
 end
 
@@ -109,6 +115,7 @@ function new(headers)
 		-- no need to re-convert this table.
 		return headers
 	end
+
 	-- normalize existing headers
 	if headers then
 		for name,val in pairs(headers) do
@@ -124,6 +131,7 @@ function new(headers)
 	else
 		headers = {}
 	end
+
 	return setmetatable(headers, headers_mt)
 end
 

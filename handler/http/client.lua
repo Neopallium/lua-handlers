@@ -25,6 +25,8 @@ local assert = assert
 local nsocket = require"handler.nsocket"
 local httpconnection = require"handler.http.connection"
 local request = require"handler.http.client.request"
+local headers = require"handler.http.headers"
+local headers_new = headers.new
 
 local client_mt = {}
 client_mt.__index = client_mt
@@ -74,6 +76,13 @@ function new(loop, client)
 	client = client or {}
 	client.loop = loop
 	client.pool = {}
+	-- normalize http headers
+	client.headers = headers_new(client.headers)
+
+	-- set User-Agent header
+	client.headers['User-Agent'] =
+		client.headers['User-Agent'] or client.user_agent or "Lua-Handler HTTPClient/0.1"
+
 	return setmetatable(client, client_mt)
 end
 
