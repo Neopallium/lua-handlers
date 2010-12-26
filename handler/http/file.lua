@@ -29,7 +29,7 @@ local file_mt = { is_content_object = true, object_type = 'file' }
 file_mt.__index = file_mt
 
 function file_mt:get_content_type()
-	return "application/octet-stream"
+	return self.content_type
 end
 
 function file_mt:get_content_length()
@@ -54,14 +54,30 @@ end
 
 module'handler.http.file'
 
-function new(filename)
+function new(filename, content_type, upload_name)
 	local file = io.open(filename)
+
+	-- get file size.
 	local size = file:seek('end')
 	file:seek('set', 0)
+
+	-- make sure there is a content type.
+	content_type = content_type or "application/octet-stream"
+
+	-- check if we where given an upload name
+	if not upload_name then
+		-- default upload name to same as filename without the path.
+		upload_name = filename:match('([^/]*)$')
+		-- TOD: add support for windows
+	end
+
 	local self = {
+		upload_name = upload_name,
 		filename = filename,
+		fullname = fullname,
 		file = file,
 		size = size,
+		content_type = content_type,
 		src = ltn12.source.file(file)
 	}
 	return setmetatable(self, file_mt)

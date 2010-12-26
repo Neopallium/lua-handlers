@@ -18,14 +18,22 @@
 -- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 -- THE SOFTWARE.
 
-local print = print
-local tostring = tostring
-local setmetatable = setmetatable
-local assert = assert
-local tconcat = table.concat
+local socket = require"socket"
 local url = require"socket.url"
 local urlencode = url.escape
 local ltn12 = require"ltn12"
+
+local print = print
+local ipairs = ipairs
+local tostring = tostring
+local time = socket.gettime
+local randomseed = math.randomseed
+local random = math.random
+local floor = math.floor
+local format = string.format
+local setmetatable = setmetatable
+local assert = assert
+local tconcat = table.concat
 
 local valid_types = {
 	number = true,
@@ -58,6 +66,46 @@ local function check_form_format(data)
 	return is_simple
 end
 
+local function content_source(t)
+	local last_src
+	local i = 1
+	return function(...)
+		local chunk
+		-- check for eof
+		if t == nil then
+			return nil
+		end
+		repeat
+			if last_src then
+				local err
+				-- process current sub-source
+				chunk, err = last_src()
+				if chunk ~= nil then
+					break
+				else
+					-- check for sub-source error
+					if err then
+						return nil, err
+					end
+					-- sub-source finished
+					last_src = nil
+				end
+			end
+			-- get next chunk from table
+			chunk = t[i]
+			i = i + 1
+			if chunk == nil then
+				t = nil
+				return nil
+			elseif type(chunk) == 'function' then
+				last_src = chunk
+				chunk = nil
+			end
+		until chunk
+		return chunk
+	end
+end
+
 local form_mt = { is_content_object = true, object_type = 'form' }
 form_mt.__index = form_mt
 
@@ -76,82 +124,116 @@ function form_mt:remove(field)
 	self.data[field] = nil
 end
 
-function form_mt:get_content_type()
-	local content
+local function append(t,idx, len, data)
+	idx = idx + 1
+	t[idx] = data
+	return idx, len + #data
+end
+
+local function fixate_form_content(self)
+	-- check if already generated the form content.
+	if self.content then
+		return
+	end
+	local content = {}
+	local c_length = 0
 	local c_type
+	local parts = 0
 	-- generate content now.
 	if self.is_simple then
-		content = {}
 		for k,v in pairs(self.data) do
-			content[#content+1] = urlencode(k) .. '=' .. urlencode(v)
+			parts, c_length = append(content, parts, c_length,
+				urlencode(k) .. '=' .. urlencode(v))
 		end
 		-- concat fields together.
-		content = tconcat(content, '&')
+		if parts > 1 then
+			content = tconcat(content, '&')
+			c_length = c_length + (1 * parts) - 1
+		else
+			content = tconcat(content)
+		end
 		-- Content-Type
 		c_type = "application/x-www-form-urlencoded"
+		-- create content ltn12 source
+		content = ltn12.source.string(content)
 	else
 		-- generate a boundry value
-		local boundry = '---------------------------96099342416336326401898798819'
+		local boundry = '---------------------------'
+		-- gen. long random number for boundry
+		randomseed(time())
+		for i=1,10 do
+			boundry = boundry .. format('%x',floor(10000 * random()))
+		end
 		self.boundry = boundry
 		-- Content-Type
-		c_type = 'multipart/form-data; boundary="' .. boundry .. '"'
+		c_type = 'multipart/form-data; boundary=' .. boundry .. ''
 		-- pre-append '--' to boundry string.
 		boundry = '--' .. boundry
+
 		-- encode form data
-		content = {}
-		for k,v in pairs(self.data) do
+		local boundry_len = #boundry
+		for key,val in pairs(self.data) do
 			-- add boundry
-			content[#content+1] = boundry
+			parts, c_length = append(content, parts, c_length, boundry)
 			-- field headers
-			content[#content+1] = '\r\nContent-Disposition: form-data; name="' .. k .. '"'
+			parts, c_length = append(content, parts, c_length,
+				'\r\nContent-Disposition: form-data; name="' .. key .. '"')
 			-- field value
-			if type(v) == 'string' then
+			if type(val) == 'string' then
 				-- no extra headers, just append the value
-				content[#content+1] = '\r\n\r\n' .. v .. '\r\n'
+				parts, c_length = append(content, parts, c_length,
+					'\r\n\r\n' .. v .. '\r\n')
 			else
 				-- check if the value is a file object.
-				if v.object_type == 'file' then
+				if val.object_type == 'file' then
+					local d
 					-- append filename to headers
-					content[#content+1] = '; filename="' .. v.filename
+					parts, c_length = append(content, parts, c_length,
+						'; filename="' .. val.upload_name)
 					-- append Content-Type header
-					content[#content+1] = '"\r\nContent-Type: ' .. v:get_content_type() .. '\r\n\r\n'
+					parts, c_length = append(content, parts, c_length,
+						'"\r\nContent-Type: ' .. val:get_content_type() .. '\r\n\r\n')
 					-- append file contents
-					content[#content+1] = v:get_content() .. '\r\n'
+					parts = parts + 1
+					c_length = c_length + val:get_content_length()
+					--content[parts] = val:get_content()
+					content[parts] = val:get_source()
+					-- value end
+					parts, c_length = append(content, parts, c_length, '\r\n')
 				else
 					assert(false, 'un-handled form value.')
 				end
 			end
 		end
 		-- mark end
-		content[#content+1] = boundry .. '--\r\n'
-		-- concat fields together.
-		content = tconcat(content)
+		parts, c_length = append(content, parts, c_length, boundry .. '--\r\n')
+		-- create content ltn12 source
+		content = content_source(content)
 	end
+	self.content_length = c_length
 	self.content = content
-	return c_type
+	self.content_type = c_type
+end
+
+function form_mt:get_content_type()
+	fixate_form_content(self)
+	return self.content_type
 end
 
 function form_mt:get_content_length()
-	if self.content then
-		return #self.content
-	else
-		return nil
-	end
+	fixate_form_content(self)
+	return self.content_length
 end
 
 function form_mt:get_source()
-	if self.content then
-		return ltn12.source.string(self.content)
-	else
-		return nil
-	end
+	fixate_form_content(self)
+	return self.content
 end
 
 function form_mt:get_content()
 	local data = {}
 	local src = self:get_source()
 	local sink = ltn12.sink.table(data)
-print('get_content:', src, sink)
 	ltn12.pump.all(src, sink)
 	return tconcat(data)
 end

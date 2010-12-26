@@ -19,15 +19,19 @@
 -- THE SOFTWARE.
 
 local httpclient = require'handler.http.client'
+local form = require'handler.http.form'
+local file = require'handler.http.file'
 local ev = require'ev'
 local loop = ev.Loop.default
 local tremove = table.remove
+local verbose = false
 
 local client = httpclient.new(loop,{
 	user_agent = "HTTPClient tester"
 })
 
 local function on_response(req, resp)
+	if not verbose then return end
 	print('---- start response headers: status code =' .. resp.status_code)
 	for k,v in pairs(resp.headers) do
 		print(k .. ": " .. v)
@@ -42,19 +46,22 @@ local function on_data(req, resp, data)
 end
 
 local function on_finished(req, resp)
-	print('====================== Finished POST request =================')
 	loop:unloop()
+	if not verbose then return end
+	print('====================== Finished POST request =================')
 end
 
-local post_data = [[
-this is a test
-]]
+local filename = arg[1] or 'data.txt'
+
+local upload_form = form.new{
+upload_file = file.new(filename)
+}
 
 local req = client:request{
 	method = 'POST',
-	host = 'localhost',
-	path = '/',
-	body = post_data,
+	--url = 'http://localhost:8081/upload.php',
+	url = 'http://localhost/upload.php',
+	body = upload_form,
 	on_response = on_response,
 	on_data = on_data,
 	on_finished = on_finished,

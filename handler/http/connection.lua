@@ -28,6 +28,7 @@ local tconcat = table.concat
 local ev = require"ev"
 local nsocket = require"handler.nsocket"
 local lhp = require"http.parser"
+local ltn12 = require"ltn12"
 
 --
 -- Chunked Transfer Encoding filter
@@ -48,6 +49,13 @@ local function chunked()
 			return '0\r\n\r\n'
 		end
 		return nil
+	end
+end
+
+local function call_callback(req, cb, ...)
+	local meth_cb = req[cb]
+	if meth_cb then
+		meth_cb(req, ...)
 	end
 end
 
@@ -74,6 +82,11 @@ function client_mt:handle_error(loc, err)
 			pool:handle_disconnect(self)
 		end
 	else
+		local req = self.cur_req
+		-- if a request is active, signal it that there was an error
+		if req then
+			call_callback(req, 'on_error', self.resp, loc, err)
+		end
 		print('httpconnection:', loc, err)
 	end
 end
@@ -82,9 +95,15 @@ function client_mt:handle_connected()
 end
 
 function client_mt:handle_data(data)
-	-- TODO: handle parial parsing of data.
-	local bytes_parsed = self.parser:execute(data)
-	assert(bytes_parsed == #data, "failed to parse all received data.")
+	local parser = self.parser
+	local bytes_parsed = parser:execute(data)
+	if parser:is_upgrade() then
+		-- protocol changing.
+		return
+	elseif #data ~= bytes_parsed then
+		-- failed to parse response.
+		self:handle_error("http-parser", "failed to parse all received data.")
+	end
 end
 
 local function gen_headers(data, headers)
@@ -154,22 +173,13 @@ function client_mt:send_body()
 	if self.sent_request_body then return end
 	self.sent_request_body = true
 
+	-- TODO: add 'empty_queue' callback to nsocket to stream request body out.
 	local data = {}
 	local sink = ltn12.sink.table(data)
 	ltn12.pump.all(self.body_src, sink)
 	data = tconcat(data)
 
---print('--- start request body:')
---print(data)
---print('--- end request body:')
 	self.sock:send(data)
-end
-
-local function call_callback(req, cb, ...)
-	local meth_cb = req[cb]
-	if meth_cb then
-		meth_cb(req, ...)
-	end
 end
 
 local function create_response_parser(self)
@@ -183,6 +193,7 @@ local function create_response_parser(self)
 		resp = {}
 		headers = {}
 		resp.headers = headers
+		self.resp = resp
 	end
 
 	function self.on_header_field(header)
@@ -224,6 +235,7 @@ local function create_response_parser(self)
 		call_callback(self.cur_req, 'on_finished', resp)
 		resp = nil
 		headers = nil
+		self.resp = nil
 	end
 
 	parser = lhp.response(self)
@@ -234,7 +246,6 @@ module'handler.http.connection'
 
 function client(loop, host, port, is_https, pool)
 	assert(not is_https, "HTTPS not supported yet!")
-print('new http connection to:',host,port)
 	local conn = setmetatable({
 		is_client = is_client,
 		is_https = is_https,

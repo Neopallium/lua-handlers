@@ -53,7 +53,6 @@ first_name = "tester",
 last_name = "smith",
 RequestMethod="RemoveSessions",
 SceneID="51985476-fc16-4d25-aadd-be67a2e0f980",
-file = file.new('data.txt')
 }
 
 local req = client:request{

@@ -106,10 +106,11 @@ function new(client, req, body)
 			req.port = 80
 		end
 		req.scheme = scheme
+		req.path = path or '/'
 	else
 		req.scheme = req.scheme or 'http'
+		req.path = req.path or '/'
 	end
-	req.path = path or '/'
 	-- validate request.
 	assert(req.host, "request missing host.")
 
