@@ -54,7 +54,8 @@ _send_data = function(this)
 	local buf = this.write_buf
 	local is_blocked = false
 
-	local num, err = sock:send(buf)
+	local num, err, part = sock:send(buf)
+	num = num or part
 	if num then
 		-- trim sent data.
 		if num < #buf then
