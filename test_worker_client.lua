@@ -27,11 +27,12 @@ local ctx = zsocket.new(loop, 1)
 
 local function get_next_job(sock, last_job_response)
 	-- send job request
+print('send job request')
 	assert(sock:send({last_job_response}))
 end
 
 -- define response handler
-function handle_msg(sock, data)
+function handle_job(sock, data)
   print("got job:\n", data)
 	-- DO WORK
 	socket.sleep(1)
@@ -39,15 +40,51 @@ function handle_msg(sock, data)
 	get_next_job(sock, 'echo job:' .. data)
 end
 
--- create PAIR worker
-local zreq = ctx:req(handle_msg)
-
+-- create socket for requesting jobs
+local zreq = nil
 math.randomseed(os.time())
-zreq:identity(string.format("<req:%x>",math.floor(1000 * math.random())))
-zreq:connect("tcp://localhost:5555")
 
--- get first job
-get_next_job(zreq, '')
+local function start_request_socket()
+	-- close old socket
+	if zreq then
+		print('closing old request socket.')
+		zreq:close()
+	end
+
+	print('connect request socket to queue server.')
+	zreq = ctx:req(handle_job)
+
+	zreq:identity(string.format("<req:%x>",math.floor(100000 * math.random())))
+	zreq:connect("tcp://localhost:5555")
+
+	-- request first job.
+	get_next_job(zreq, '')
+end
+
+local queue_start_time = nil
+-- subscribe to queue server to detect server restarts.
+function handle_sub(sock, data)
+	if not queue_start_time then
+		print('Got first queue start time message.')
+		-- we just started so this is our first message from the server.
+		-- so store the server's start time.
+		queue_start_time = data
+		-- and connect request socket.
+		start_request_socket()
+	elseif queue_start_time ~= data then
+		print('Got NEW queue start time message, queue server must have restarted.')
+		-- detected different queue server, the old one must have died.
+		queue_start_time = data
+		-- and re-connect request socket.
+		start_request_socket()
+	end
+end
+
+-- subscribe to queue server
+local zsub = ctx:sub(handle_sub)
+
+zsub:sub("")
+zsub:connect("tcp://localhost:5556")
 
 loop:loop()
 

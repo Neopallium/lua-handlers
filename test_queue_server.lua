@@ -30,8 +30,6 @@ local work_requests = {}
 
 --[[
 TODO:
-* server needs PUB socket to publish when it has started/re-started so workers can
-  re-connect and re-send job pull requests.
 * should have job pull & job results messages that the workers can send, that way
   workers can send the jobs results, then exit or do after job clean-up work before
 	requesting next job
@@ -47,7 +45,7 @@ print('server:', unpack(msg))
 		if part == '' then break end
 	end
 	-- queue work request
-print('server: queue addr:', unpack(addr))
+print('server: queue worker address:', unpack(addr))
 	tinsert(work_requests, addr)
 end
 
@@ -66,10 +64,26 @@ local function io_in_cb()
 		-- add job to message address
 		tinsert(addr, line)
 		zxrep:send(addr)
+	else
+		print('WARNING: no workers waiting for jobs.  TODO: implement job wait queue.')
 	end
 end
 local io_in = ev.IO.new(io_in_cb, 0, ev.READ)
 io_in:start(loop)
+
+-- create PUB socket for broadcast of status.
+local zpub = ctx:pub()
+zpub:bind("tcp://lo:5556")
+
+-- use server start time to allow workers to detect server restarts.
+-- TODO: use a better time source or a true random number source
+local start_time = tostring(os.time())
+
+local function status_update_cb()
+	zpub:send(start_time)
+end
+local status_update = ev.Timer.new(status_update_cb, 1.0, 1.0)
+status_update:start(loop)
 
 loop:loop()
 
