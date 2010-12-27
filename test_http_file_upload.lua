@@ -51,7 +51,11 @@ local function on_finished(req, resp)
 	print('====================== Finished POST request =================')
 end
 
-local filename = arg[1] or 'data.txt'
+local filename = arg[1]
+if not filename then
+	print('Usage: ' .. arg[0] .. ' <filename>')
+	os.exit(-1)
+end
 
 local upload_form = form.new{
 upload_file = file.new(filename)

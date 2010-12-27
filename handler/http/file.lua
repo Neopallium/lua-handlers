@@ -51,7 +51,7 @@ end
 module'handler.http.file'
 
 function new(filename, content_type, upload_name)
-	local file = io.open(filename)
+	local file = assert(io.open(filename))
 
 	-- get file size.
 	local size = file:seek('end')
