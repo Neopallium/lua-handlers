@@ -161,10 +161,13 @@ local function fixate_form_content(self)
 		local boundry = '---------------------------'
 		-- gen. long random number for boundry
 		randomseed(time())
-		for i=1,10 do
+		for i=1,15 do
 			boundry = boundry .. format('%x',floor(10000 * random()))
 		end
-		self.boundry = boundry
+		-- limit boundry length to 65 chars max
+		if #boundry > 65 then
+			boundry = boundry:sub(1,65)
+		end
 		-- Content-Type
 		c_type = 'multipart/form-data; boundary=' .. boundry .. ''
 		-- pre-append '--' to boundry string.

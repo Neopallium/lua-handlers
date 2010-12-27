@@ -33,11 +33,7 @@ function file_mt:get_content_type()
 end
 
 function file_mt:get_content_length()
-	local file = self.file
-	local cur = file:seek()
-	local size = file:seek('end')
-	file:seek('set', cur)
-	return size
+	return self.size
 end
 
 function file_mt:get_source()
@@ -73,12 +69,23 @@ function new(filename, content_type, upload_name)
 
 	local self = {
 		upload_name = upload_name,
-		filename = filename,
-		fullname = fullname,
-		file = file,
 		size = size,
 		content_type = content_type,
 		src = ltn12.source.file(file)
+	}
+	return setmetatable(self, file_mt)
+end
+
+function new_string(name, content_type, content)
+	assert(content, "Missing content for file.")
+	-- make sure there is a content type.
+	content_type = content_type or "application/octet-stream"
+
+	local self = {
+		upload_name = name,
+		size = #content,
+		content_type = content_type,
+		src = ltn12.source.string(content)
 	}
 	return setmetatable(self, file_mt)
 end

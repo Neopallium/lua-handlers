@@ -19,19 +19,19 @@
 -- THE SOFTWARE.
 
 local httpclient = require'handler.http.client'
+local form = require'handler.http.form'
+local file = require'handler.http.file'
 local ev = require'ev'
 local loop = ev.Loop.default
 local tremove = table.remove
+local verbose = false
 
 local client = httpclient.new(loop,{
-	user_agent = "HTTPClient tester",
+	user_agent = "HTTPClient tester"
 })
 
-local urls = arg
-local req
-local next_url
-
 local function on_response(req, resp)
+	if not verbose then return end
 	print('---- start response headers: status code =' .. resp.status_code)
 	for k,v in pairs(resp.headers) do
 		print(k .. ": " .. v)
@@ -46,26 +46,25 @@ local function on_data(req, resp, data)
 end
 
 local function on_finished(req, resp)
-	next_url()
+	loop:unloop()
+	if not verbose then return end
+	print('====================== Finished POST request =================')
 end
 
-next_url = function()
-	local url = tremove(urls, 1)
-	if not url then
-		-- finished processing urls
-		loop:unloop()
-		return
-	end
-	req = client:request{
-		url = url,
-		on_response = on_response,
-		on_data = on_data,
-		on_finished = on_finished,
-	}
-end
+local upload_form = form.new{
+upload_file = file.new_string('test.txt', 'text/plain', [[
+this is a test of uploading a file with contents from memory.
+]])
+}
 
--- start serial request of urls from command line.
-next_url()
+local req = client:request{
+	method = 'POST',
+	url = 'http://localhost/upload.php',
+	body = upload_form,
+	on_response = on_response,
+	on_data = on_data,
+	on_finished = on_finished,
+}
 
 loop:loop()
 

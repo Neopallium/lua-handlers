@@ -19,19 +19,25 @@
 -- THE SOFTWARE.
 
 local httpclient = require'handler.http.client'
-local form = require'handler.http.form'
-local file = require'handler.http.file'
 local ev = require'ev'
 local loop = ev.Loop.default
 local tremove = table.remove
-local verbose = false
 
 local client = httpclient.new(loop,{
-	user_agent = "HTTPClient tester"
+	user_agent = "HTTPClient tester",
 })
 
+-- check for parallel requests
+local parallel = false
+if arg[1] == '-p' then
+	parallel = true
+	tremove(arg,1) -- pop option from list.
+end
+
+local urls = arg
+local count = #urls
+
 local function on_response(req, resp)
-	if not verbose then return end
 	print('---- start response headers: status code =' .. resp.status_code)
 	for k,v in pairs(resp.headers) do
 		print(k .. ": " .. v)
@@ -45,26 +51,36 @@ local function on_data(req, resp, data)
 	print('---- end response body')
 end
 
-local function on_finished(req, resp)
-	loop:unloop()
-	if not verbose then return end
-	print('====================== Finished POST request =================')
+local function next_url()
+	local url = tremove(urls, 1)
+	if not url then return false end
+	print('---- start request of url: ' .. url)
+	-- start next request.
+	client:request{
+		url = url,
+		on_response = on_response,
+		on_data = on_data,
+		on_finished = function()
+			count = count - 1
+			if count == 0 then
+				-- finished processing urls
+				loop:unloop()
+			else
+				next_url()
+			end
+		end,
+	}
+	return true
 end
 
-local filename = arg[1] or 'data.txt'
-
-local upload_form = form.new{
-upload_file = file.new(filename)
-}
-
-local req = client:request{
-	method = 'POST',
-	url = 'http://localhost/upload.php',
-	body = upload_form,
-	on_response = on_response,
-	on_data = on_data,
-	on_finished = on_finished,
-}
+if parallel then
+	-- start parallel request of urls from command line.
+	repeat
+	until not next_url()
+else
+	-- start serial request of urls from command line.
+	next_url()
+end
 
 loop:loop()
 

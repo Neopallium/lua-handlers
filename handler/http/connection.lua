@@ -29,6 +29,8 @@ local ev = require"ev"
 local nsocket = require"handler.nsocket"
 local lhp = require"http.parser"
 local ltn12 = require"ltn12"
+local headers = require"handler.http.headers"
+local headers_new = headers.new
 
 --
 -- Chunked Transfer Encoding filter
@@ -52,19 +54,15 @@ local function chunked()
 	end
 end
 
-local function call_callback(req, cb, ...)
-	local meth_cb = req[cb]
+local function call_callback(obj, cb, ...)
+	local meth_cb = obj[cb]
 	if meth_cb then
-		meth_cb(req, ...)
+		meth_cb(obj, ...)
 	end
 end
 
 local client_mt = {}
 client_mt.__index = client_mt
-
-function client_mt:get_name()
-	return self.host .. ":" .. tostring(port)
-end
 
 function client_mt:close()
 	local sock = self.sock
@@ -75,19 +73,20 @@ function client_mt:close()
 end
 
 function client_mt:handle_error(loc, err)
-	if err == 'closed' then
-		self.is_closed = true
-		local pool = self.pool
-		if pool then
-			pool:handle_disconnect(self)
-		end
-	else
+	if err ~= 'closed' then
 		local req = self.cur_req
 		-- if a request is active, signal it that there was an error
 		if req then
 			call_callback(req, 'on_error', self.resp, loc, err)
 		end
 		print('httpconnection:', loc, err)
+	end
+	-- close connection on all errors.
+	self.is_closed = true
+	-- remove connection from the pool.
+	local pool = self.pool
+	if pool then
+		pool:remove_connection(self)
 	end
 end
 
@@ -132,6 +131,8 @@ function client_mt:queue_request(req)
 	if not self.expect_100 then
 		self:send_body()
 	end
+
+	return true
 end
 
 -- this need to be called before writting headers.
@@ -170,7 +171,7 @@ function client_mt:send_body()
 	local req = self.cur_req
 	local body = req.body
 	-- if no request body or body has already been sent, then return
-	if self.sent_request_body then return end
+	if self.sent_request_body or not body then return end
 	self.sent_request_body = true
 
 	-- TODO: add 'empty_queue' callback to nsocket to stream request body out.
@@ -191,7 +192,7 @@ local function create_response_parser(self)
 	function self.on_message_begin()
 		-- setup response object.
 		resp = {}
-		headers = {}
+		headers = headers_new()
 		resp.headers = headers
 		self.resp = resp
 	end
@@ -221,6 +222,7 @@ local function create_response_parser(self)
 	end
 
 	function self.on_body(data)
+		if self.skip_complete then return end
 		-- call request's on_data callback
 		call_callback(self.cur_req, 'on_data', resp, data)
 	end
@@ -231,8 +233,16 @@ local function create_response_parser(self)
 			self.skip_complete = false
 			return
 		end
+		local req = self.cur_req
+		-- we are done with this request.
+		self.cur_req = nil
+		-- put connection back into the pool.
+		local pool = self.pool
+		if pool then
+			pool:put_idle_connection(self)
+		end
 		-- call request's on_finished callback
-		call_callback(self.cur_req, 'on_finished', resp)
+		call_callback(req, 'on_finished', resp)
 		resp = nil
 		headers = nil
 		self.resp = nil
@@ -244,14 +254,11 @@ end
 
 module'handler.http.connection'
 
-function client(loop, host, port, is_https, pool)
-	assert(not is_https, "HTTPS not supported yet!")
+function client(loop, pool)
+	assert(not pool.is_https, "HTTPS not supported yet!")
 	local conn = setmetatable({
 		is_client = is_client,
-		is_https = is_https,
 		is_closed = false,
-		host = host,
-		port = port,
 		pool = pool,
 		expect_100 = false,
 		sent_request_body = false,
@@ -260,7 +267,7 @@ function client(loop, host, port, is_https, pool)
 
 	create_response_parser(conn)
 
-	conn.sock = nsocket.new(loop, conn, host, port)
+	conn.sock = nsocket.new(loop, conn, pool.address, pool.port)
 
 	return conn
 end

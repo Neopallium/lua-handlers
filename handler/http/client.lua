@@ -22,9 +22,8 @@ local setmetatable = setmetatable
 local print = print
 local assert = assert
 
-local nsocket = require"handler.nsocket"
-local httpconnection = require"handler.http.connection"
 local request = require"handler.http.client.request"
+local hosts = require"handler.http.client.hosts"
 local headers = require"handler.http.headers"
 local headers_new = headers.new
 
@@ -32,42 +31,12 @@ local client_mt = {}
 client_mt.__index = client_mt
 
 function client_mt:request(req)
-	return request.new(self, req)
-end
+	local req = request.new(self, req)
 
-function client_mt:handle_disconnect(conn)
-	-- remove dead connection from pool
-	local name = conn:get_name()
-	if self.pool[name] == conn then
-		self.pool[name] = nil
-	end
-end
+	-- queue request to be processed.
+	self.hosts:queue_request(req)
 
-function client_mt:put_connection(conn)
-	if not conn.is_closed then
-		local name = conn:get_name()
-		local old = self.pool[name]
-		-- for now only pool one connection per "host:port"
-		if old then
-			-- keep the new one since it should live longer.
-			old:close()
-		end
-		self.pool[name] = conn
-	end
-end
-
-function client_mt:get_connection(host, port, is_https)
-	local name = host .. ":" .. tostring(port)
-	local conn = self.pool[name]
-	-- already have an open connection.
-	if conn then
-		-- we don't support pipelining yet, so remove the connection.
-		self.pool[name] = nil
-	else
-		-- no pooled connection, create a new connection.
-		conn = httpconnection.client(self.loop, host, port, is_https)
-	end
-	return conn
+	return req
 end
 
 module'handler.http.client'
@@ -75,7 +44,7 @@ module'handler.http.client'
 function new(loop, client)
 	client = client or {}
 	client.loop = loop
-	client.pool = {}
+	client.hosts = hosts.new(client)
 	-- normalize http headers
 	client.headers = headers_new(client.headers)
 

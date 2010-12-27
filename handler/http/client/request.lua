@@ -133,14 +133,6 @@ function new(client, req, body)
 	-- default to GET method.
 	req.method = req.method or 'GET'
 
-	req = setmetatable(req, request_mt)
-	-- get http connection.
-	local conn = client:get_connection(req.host, req.port, req.scheme == 'https')
-	req.conn = conn
-
-	-- send request.
-	conn:queue_request(req)
-
-	return req
+	return setmetatable(req, request_mt)
 end
 
