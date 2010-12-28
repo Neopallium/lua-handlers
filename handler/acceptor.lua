@@ -26,19 +26,19 @@ local socket = require"socket"
 local ev = require"ev"
 
 local acceptor_mt = {
-set_accept_max = function(this, max)
-	this.accept_max = max
+set_accept_max = function(self, max)
+	self.accept_max = max
 end,
-close = function(this)
-	this.io:stop(this.loop)
-	this.server:close()
+close = function(self)
+	self.io:stop(self.loop)
+	self.server:close()
 end,
 }
 acceptor_mt.__index = acceptor_mt
 
 local function acceptor_wrap(loop, handler, server, backlog)
 	-- create acceptor
-	local this = {
+	local self = {
 		loop = loop,
 		handler = handler,
 		server = server,
@@ -46,7 +46,7 @@ local function acceptor_wrap(loop, handler, server, backlog)
 		accept_max = 100,
 		backlog = backlog,
 	}
-	setmetatable(this, acceptor_mt)
+	setmetatable(self, acceptor_mt)
 
 	server:settimeout(0)
 	-- create callback closure
@@ -64,11 +64,11 @@ local function acceptor_wrap(loop, handler, server, backlog)
 	end
 	-- create IO watcher.
 	local fd = server:getfd()
-	this.io = ev.IO.new(accept_cb, fd, ev.READ)
+	self.io = ev.IO.new(accept_cb, fd, ev.READ)
 
-	this.io:start(loop)
+	self.io:start(loop)
 
-	return this
+	return self
 end
 
 module'handler.acceptor'
@@ -77,20 +77,19 @@ function new(loop, handler, addr, port, backlog)
 	-- setup server socket.
 	local server = socket.tcp()
 	-- wrap server socket
-	this = acceptor_wrap(loop, handler, server)
+	local self = acceptor_wrap(loop, handler, server)
 	assert(server:setoption('reuseaddr', true), 'server:setoption failed')
 	-- bind server
 	assert(server:bind(addr, port))
 	assert(server:listen(backlog or 256))
 
-	return this
+	return self
 end
 
 function wrap(loop, handler, server)
 	-- make server socket non-blocking.
 	server:settimeout(0)
 	-- wrap server socket
-	this = acceptor_wrap(loop, handler, server)
-	return this
+	return acceptor_wrap(loop, handler, server)
 end
 
