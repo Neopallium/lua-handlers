@@ -35,7 +35,7 @@ handle_data = function(self, data)
 	print('udp_client.data:', self, data)
 end,
 handle_timer = function(self)
-	self.sck:send('ping\n')
+	self.sock:send('ping\n')
 end,
 }
 udp_client_mt.__index = udp_client_mt
@@ -44,8 +44,8 @@ udp_client_mt.__index = udp_client_mt
 local function new_udp_client(sock)
 print('new_udp_client:', sock)
 	local self = setmetatable({}, udp_client_mt)
-	-- create client udp socket from server socket.
-	self.sck = socket.wrap_connected(loop, self, sock)
+	sock:sethandler(self)
+	self.sock = sock
 
 	-- create timer watcher
 	self.timer = ev.Timer.new(function()

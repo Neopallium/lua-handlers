@@ -37,9 +37,10 @@ end,
 tcp_client_mt.__index = tcp_client_mt
 
 -- new tcp client
-local function new_tcp_client(sck)
+local function new_tcp_client(sock)
 	local self = setmetatable({}, tcp_client_mt)
-	self.sck = socket.wrap(loop, self, sck)
+	sock:sethandler(self)
+	self.sock = sock
 	return self
 end
 

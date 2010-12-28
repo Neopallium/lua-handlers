@@ -191,6 +191,14 @@ local function sock_recv_data(self)
 	return true
 end
 
+local function sock_sethandler(self, handler)
+	self.handler = handler
+end
+
+local function sock_is_closed(self)
+	return self.is_closing
+end
+
 local sock_mt = {
 send = sock_send,
 getsockopt = sock_getsockopt,
@@ -199,6 +207,8 @@ getsockname = sock_getsockname,
 getpeername = sock_getpeername,
 shutdown = sock_shutdown,
 close = sock_close,
+sethandler = sock_sethandler,
+is_closed = sock_is_closed,
 }
 sock_mt.__index = sock_mt
 
@@ -307,7 +317,7 @@ end
 
 function wrap_connected(loop, handler, sock)
 	-- wrap socket
-	return sock_wrap(loop, handler, sock, is_connected)
+	return sock_wrap(loop, handler, sock, true)
 end
 
 -- export

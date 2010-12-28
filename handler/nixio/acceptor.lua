@@ -21,10 +21,13 @@
 local setmetatable = setmetatable
 local print = print
 local assert = assert
+local tostring = tostring
 
 local ev = require"ev"
 local nixio = require"nixio"
 local new_socket = nixio.socket
+local socket = require"handler.nixio.socket"
+local wrap_connected = socket.wrap_connected
 
 local function n_assert(test, errno, msg)
 	return assert(test, msg)
@@ -66,6 +69,7 @@ local function sock_new_bind_listen(loop, handler, domain, _type, host, port, ba
 	-- create callback closure
 	local accept_cb
 	if is_dgram then
+		local udp_clients = setmetatable({},{__mode="v"})
 		accept_cb = function()
 			local max = self.accept_max
 			local count = 0
@@ -77,16 +81,32 @@ local function sock_new_bind_listen(loop, handler, domain, _type, host, port, ba
 					end
 					break
 				else
-					-- make a duplicate server socket
-					local sock = new_socket(domain, _type)
-					n_assert(sock:setsockopt('socket', 'reuseaddr', 1))
-					n_assert(sock:bind(host, port))
-					-- connect dupped socket to client's ip:port
-					n_assert(sock:connect(c_ip, c_port))
-					-- pass client socket to new connection handler.
-					local client = handler(sock)
-					-- call connected callback, socket is ready for sending data.
-					client:handle_connected()
+					local client
+					local c_key = c_ip .. tostring(c_port)
+					-- look for existing client socket.
+					local sock = udp_clients[c_key]
+					-- check if socket is still valid.
+					if sock and sock:is_closed() then
+						sock = nil
+					end
+					-- if no cached socket, make a new one.
+					if not sock then
+						-- make a duplicate server socket
+						sock = new_socket(domain, _type)
+						n_assert(sock:setsockopt('socket', 'reuseaddr', 1))
+						n_assert(sock:bind(host, port))
+						-- connect dupped socket to client's ip:port
+						n_assert(sock:connect(c_ip, c_port))
+						-- wrap nixio socket
+						sock = wrap_connected(loop, nil, sock)
+						udp_clients[c_key] = sock
+						-- pass client socket to new connection handler.
+						client = handler(sock)
+						-- call connected callback, socket is ready for sending data.
+						client:handle_connected()
+					else
+						client = sock.handler
+					end
 					-- handle first data block from udp client
 					client:handle_data(data)
 				end
@@ -98,14 +118,18 @@ local function sock_new_bind_listen(loop, handler, domain, _type, host, port, ba
 			local max = self.accept_max
 			local count = 0
 			repeat
-				local client, errno, err = server:accept()
-				if not client then
-					if client ~= false then
+				local sock, errno, err = server:accept()
+				if not sock then
+					if sock ~= false then
 						print('stream_accept.error:', errno, err)
 					end
 					break
 				else
-					handler(client)
+					-- wrap nixio socket
+					sock = wrap_connected(loop, nil, sock)
+					local client = handler(sock)
+					-- call connected callback, socket is ready for sending data.
+					client:handle_connected()
 				end
 				count = count + 1
 			until count >= max
