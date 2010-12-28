@@ -40,7 +40,8 @@ udp_client_mt.__index = udp_client_mt
 -- new udp client
 local function new_udp_client(host, port)
 	local this = setmetatable({}, udp_client_mt)
-	this.sck = udp.new(loop, this, host, port)
+	this.sck = udp.new(loop, this)
+	assert(this.sck:setsockname(host, port))
 	return this
 end
 

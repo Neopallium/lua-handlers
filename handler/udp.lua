@@ -24,12 +24,20 @@ local print = print
 local socket = require"socket"
 local ev = require"ev"
 
-local function udp_getstats(self)
-	return self.socket:getstats()
+local function udp_setsockname(self, ...)
+	return self.socket:setsockname(...)
 end
 
 local function udp_getsockname(self)
 	return self.socket:getsockname()
+end
+
+local function udp_setpeername(self, ...)
+	return self.peeret:setpeername(...)
+end
+
+local function udp_getpeername(self)
+	return self.peeret:getpeername()
 end
 
 local function udp_setoption(self, ...)
@@ -37,12 +45,8 @@ local function udp_setoption(self, ...)
 end
 
 local function udp_close(self)
-	self.is_closing = true
-	if not self.write_buf or self.has_error then
-		self.io_write:stop(self.loop)
-		self.io_read:stop(self.loop)
-		self.socket:close()
-	end
+	self.io_read:stop(self.loop)
+	self.socket:close()
 end
 
 local function udp_handle_error(self, err)
@@ -57,146 +61,57 @@ local function udp_handle_error(self, err)
 	udp_close(self)
 end
 
-local function udp_send_data(self)
-	local sock = self.socket
-	local buf = self.write_buf
-	local is_blocked = false
-
-	local num, err, part = sock:send(buf)
-	num = num or part
-	if num then
-		-- trim sent data.
-		if num < #buf then
-			self.write_buf = buf:sub(num+1)
-			-- partial send, not enough socket buffer space, so blcok writes.
-			is_blocked = true
-		else
-			self.write_buf = nil
-			if self.is_closing then
-				-- write buffer is empty, finish closing socket.
-				udp_close(self)
-				return num, 'closed'
-			end
-		end
-	else
-		-- got timeout error block writes.
-		if err == 'timeout' then
-			is_blocked = true
-		else
-			-- socket error
-			udp_handle_error(self, err)
-			return nil, err
-		end
-	end
-	-- block/un-block write events.
-	if is_blocked ~= self.write_blocked then
-		self.write_blocked = is_blocked
-		if is_blocked then
-			self.io_write:start(self.loop)
-			return num, 'blocked'
-		else
-			self.io_write:stop(self.loop)
-		end
-	end
-	return num
+local function udp_send(self, data)
+	return self.socket:send(buf)
 end
 
-local function udp_handle_connected(self)
-	local handler = self.handler
-	self.is_connecting = false
-	local handle_connected = handler.handle_connected
-	if handle_connected then
-		handle_connected(handler)
-	end
+local function udp_sendto(self, data, ip, port)
+	return self.socket:sendto(buf, ip, port)
 end
 
 local function udp_receive_data(self)
-	local read_len = self.read_len
+	local max_packet = self.max_packet
 	local read_max = self.read_max
 	local handler = self.handler
 	local sock = self.socket
 	local len = 0
-	local is_connecting = self.is_connecting
 
 	repeat
-		local data, err, part = sock:receive(read_len)
-		if part and #part > 0 then
-			-- only got partial data.
-			data = part
-		elseif not data then
-			if err == 'timeout' then
-				-- check if we where in the connecting state.
-				if is_connecting then
-					is_connecting = false
-					udp_handle_connected(self)
-				end
+		local data, ip, port = sock:receivefrom(max_packet)
+		if data == nil then
+			if ip == 'timeout' then
 				-- no data
 				return true
 			else
 				-- socket error
-				udp_handle_error(self, err)
+				udp_handle_error(self, ip)
 				return false, err
 			end
 		end
-		-- check if we where in the connecting state.
-		if is_connecting then
-			is_connecting = false
-			udp_handle_connected(self)
-		end
 		-- pass read data to handler
-		len = len + #data
-		err = handler:handle_data(data)
+		local err = handler:handle_data(data, ip, port)
 		if err then
 			-- report error
 			udp_handle_error(self, err)
 			return false, err
 		end
+		len = len + #data
 	until len >= read_max
 
 	return true
 end
 
-local function udp_send(self, data)
-	local num, err
-	local buf = self.write_buf
-	if buf then
-		self.write_buf = buf .. data
-	else
-		self.write_buf = data
-	end
-	if not self.write_blocked then
-		num, err = udp_send_data(self)
-	end
-	return #data, err
-end
-
-local function udp_send_no_buffer(self, data)
-	-- check if writes are blocked.
-	if self.write_blocked then
-		return nil, 'blocked'
-	end
-	self.write_buf = data
-	local num, err = udp_send_data(self)
-	return #data, err
-end
-
 local udp_mt = {
 send = udp_send,
-getstats = udp_getstats,
+sendto = udp_sendto,
 getsockname = udp_getsockname,
+setsockname = udp_setsockname,
+getpeername = udp_getpeername,
+setpeername = udp_setpeername,
 setoption = udp_setoption,
 close = udp_close,
 }
 udp_mt.__index = udp_mt
-
-local udp_no_buffer_mt = {
-send = udp_send_no_buffer,
-getstats = udp_getstats,
-getsockname = udp_getsockname,
-setoption = udp_setoption,
-close = udp_close,
-}
-udp_no_buffer_mt.__index = udp_no_buffer_mt
 
 local function udp_wrap(loop, handler, sck)
 	-- create udp socket object
@@ -204,37 +119,20 @@ local function udp_wrap(loop, handler, sck)
 		loop = loop,
 		handler = handler,
 		socket = sck,
-		is_connecting = true,
-		write_blocked = false,
-		read_len = 8192,
+		max_packet = 8192,
 		read_max = 65536,
-		is_closing = false,
 	}
 	setmetatable(self, udp_mt)
 
 	sck:settimeout(0)
 	local fd = sck:getfd()
 	-- create callback closure
-	local write_cb = function()
-		udp_send_data(self)
-	end
 	local read_cb = function()
 		udp_receive_data(self)
 	end
-	local connected_cb = function(loop, io, revents)
-		if not self.write_blocked then
-			io:stop(loop)
-		end
-		-- change callback to write_cb
-		io:callback(write_cb)
-		-- check for connect errors by tring to read from the socket.
-		udp_receive_data(self)
-	end
 	-- create IO watcher.
-	self.io_write = ev.IO.new(connected_cb, fd, ev.WRITE)
 	self.io_read = ev.IO.new(read_cb, fd, ev.READ)
 
-	self.io_write:start(loop)
 	self.io_read:start(loop)
 
 	return self
@@ -242,17 +140,10 @@ end
 
 module'handler.udp'
 
-function new(loop, handler, host, port)
+function new(loop, handler)
 	-- connect to server.
 	local sck = socket.udp()
-	local self = udp_wrap(loop, handler, sck)
-	local ret, err = sck:setsockname(host, port)
-	if err and err ~= 'timeout' then
-		-- socket error
-		udp_handle_error(self, err)
-		return nil, err
-	end
-	return self
+	return udp_wrap(loop, handler, sck)
 end
 
 -- export

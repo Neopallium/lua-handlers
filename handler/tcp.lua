@@ -28,6 +28,10 @@ local function tcp_getstats(self)
 	return self.socket:getstats()
 end
 
+local function tcp_setstats(self, ...)
+	return self.socket:setstats(...)
+end
+
 local function tcp_getsockname(self)
 	return self.socket:getsockname()
 end
@@ -57,9 +61,8 @@ local function tcp_handle_error(self, err)
 	tcp_close(self)
 end
 
-local function tcp_send_data(self)
+local function tcp_send_data(self, buf)
 	local sock = self.socket
-	local buf = self.write_buf
 	local is_blocked = false
 
 	local num, err, part = sock:send(buf)
@@ -67,7 +70,8 @@ local function tcp_send_data(self)
 	if num then
 		-- trim sent data.
 		if num < #buf then
-			self.write_buf = buf:sub(num+1)
+			-- remove sent bytes from buffer.
+			buf = buf:sub(num+1)
 			-- partial send, not enough socket buffer space, so blcok writes.
 			is_blocked = true
 		else
@@ -92,6 +96,7 @@ local function tcp_send_data(self)
 	if is_blocked ~= self.write_blocked then
 		self.write_blocked = is_blocked
 		if is_blocked then
+			self.write_buf = buf
 			self.io_write:start(self.loop)
 			return num, 'blocked'
 		else
@@ -99,6 +104,25 @@ local function tcp_send_data(self)
 		end
 	end
 	return num
+end
+
+local function tcp_send(self, data)
+	local num, err
+	local buf = self.write_buf
+	if buf then
+		buf = buf .. data
+	else
+		buf = data
+	end
+	if not self.write_blocked then
+		num, err = tcp_send_data(self, buf)
+	else
+		-- let the caller know that the socket is blocked and data is being buffered
+		err = 'blocked'
+	end
+	-- always return the size of the data passed in, since un-sent data will be buffered
+	-- for sending later.
+	return #data, err
 end
 
 local function tcp_handle_connected(self)
@@ -156,47 +180,15 @@ local function tcp_receive_data(self)
 	return true
 end
 
-local function tcp_send(self, data)
-	local num, err
-	local buf = self.write_buf
-	if buf then
-		self.write_buf = buf .. data
-	else
-		self.write_buf = data
-	end
-	if not self.write_blocked then
-		num, err = tcp_send_data(self)
-	end
-	return #data, err
-end
-
-local function tcp_send_no_buffer(self, data)
-	-- check if writes are blocked.
-	if self.write_blocked then
-		return nil, 'blocked'
-	end
-	self.write_buf = data
-	local num, err = tcp_send_data(self)
-	return #data, err
-end
-
 local tcp_mt = {
 send = tcp_send,
 getstats = tcp_getstats,
+setstats = tcp_setstats,
 getsockname = tcp_getsockname,
 setoption = tcp_setoption,
 close = tcp_close,
 }
 tcp_mt.__index = tcp_mt
-
-local tcp_no_buffer_mt = {
-send = tcp_send_no_buffer,
-getstats = tcp_getstats,
-getsockname = tcp_getsockname,
-setoption = tcp_setoption,
-close = tcp_close,
-}
-tcp_no_buffer_mt.__index = tcp_no_buffer_mt
 
 local function tcp_wrap(loop, handler, sck)
 	-- create tcp socket object
@@ -216,7 +208,20 @@ local function tcp_wrap(loop, handler, sck)
 	local fd = sck:getfd()
 	-- create callback closure
 	local write_cb = function()
-		tcp_send_data(self)
+		local num, err = tcp_send_data(self, self.write_buf)
+		if self.write_buf == nil and not self.is_closed then
+			-- write buffer is empty and socket is still open,
+			-- call drain callback.
+			local handler = self.handler
+			local drain = handler.handle_drain
+			if drain then
+				local err = drain(handler)
+				if err then
+					-- report error
+					tcp_handle_error(self, err)
+				end
+			end
+		end
 	end
 	local read_cb = function()
 		tcp_receive_data(self)
