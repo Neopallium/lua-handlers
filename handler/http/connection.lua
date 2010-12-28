@@ -28,9 +28,9 @@ local tconcat = table.concat
 local ev = require"ev"
 local tcp = require"handler.tcp"
 local lhp = require"http.parser"
-local ltn12 = require"ltn12"
 local headers = require"handler.http.headers"
 local headers_new = headers.new
+local ltn12 = require"ltn12"
 
 --
 -- Chunked Transfer Encoding filter
@@ -105,6 +105,11 @@ function client_mt:handle_data(data)
 	end
 end
 
+function client_mt:handle_drain()
+	-- write buffer is empty, send more of the request body.
+	self:send_body()
+end
+
 local function gen_headers(data, headers)
 	for k,v in pairs(headers) do
 		data = data .. k .. ": " .. v .. "\r\n"
@@ -140,7 +145,11 @@ function client_mt:preprocess_body()
 	local req = self.cur_req
 	local body = req.body
 	-- if no request body, then we are finished.
-	if not body then return end
+	if not body then
+		-- make sure there is no body_src left-over from previous request.
+		self.body_src = nil
+		return
+	end
 
 	-- set "Expect: 100-continue" header
 	req.headers.Expect = "100-continue"
@@ -168,19 +177,28 @@ function client_mt:preprocess_body()
 end
 
 function client_mt:send_body()
-	local req = self.cur_req
-	local body = req.body
-	-- if no request body or body has already been sent, then return
-	if self.sent_request_body or not body then return end
-	self.sent_request_body = true
+	local body_src = self.body_src
+	local sock = self.sock
+	-- check if there is anything to send
+	if body_src == nil then return end
 
-	-- TODO: add 'empty_queue' callback to tcp socket to stream request body out.
-	local data = {}
-	local sink = ltn12.sink.table(data)
-	ltn12.pump.all(self.body_src, sink)
-	data = tconcat(data)
-
-	self.sock:send(data)
+	-- send chunks until socket blocks.
+	local chunk, num, err
+	local len = 0
+	repeat
+		-- get next chunk
+		chunk, err = body_src()
+		if chunk == nil then
+			-- finished sending request body.
+			self.body_src = nil
+			return
+		end
+		if chunk ~= "" then
+			-- send chunk
+			num, err = sock:send(chunk)
+			if num then len = len + num end
+		end
+	until err
 end
 
 local function create_response_parser(self)
@@ -261,7 +279,6 @@ function client(loop, pool)
 		is_closed = false,
 		pool = pool,
 		expect_100 = false,
-		sent_request_body = false,
 		skip_complete = false,
 	}, client_mt)
 
