@@ -1,6 +1,6 @@
 #!/usr/bin/env lua
 
-package	= 'lua-handler-zsocket'
+package	= 'lua-handler-zmq'
 version	= 'scm-0'
 source	= {
 	url	= 'git://github.com/Neopallium/lua-handlers.git'
@@ -19,7 +19,7 @@ build	= {
 	type		= 'none',
 	install = {
 		lua = {
-			['handler.zsocket']  = "handler/zsocket.lua",
+			['handler.zmq']  = "handler/zmq.lua",
 		}
 	}
 }

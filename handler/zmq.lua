@@ -82,7 +82,7 @@ local function zsock_handle_error(self, err)
 	if errFunc then
 		errFunc(self, err)
 	else
-		print('zsocket: error ', err)
+		print('zmq socket: error ', err)
 	end
 	zsock_close(self)
 end
@@ -283,7 +283,7 @@ local function zsock_handle_idle(self)
 	end
 end
 
-local zsocket_mt = {
+local zsock_mt = {
 _has_state = false,
 send = zsock_send,
 setopt = zsock_setopt,
@@ -293,9 +293,9 @@ bind = zsock_bind,
 connect = zsock_connect,
 close = zsock_close,
 }
-zsocket_mt.__index = zsocket_mt
+zsock_mt.__index = zsock_mt
 
-local zsocket_no_send_mt = {
+local zsock_no_send_mt = {
 _has_state = false,
 setopt = zsock_setopt,
 getopt = zsock_getopt,
@@ -304,9 +304,9 @@ bind = zsock_bind,
 connect = zsock_connect,
 close = zsock_close,
 }
-zsocket_no_send_mt.__index = zsocket_no_send_mt
+zsock_no_send_mt.__index = zsock_no_send_mt
 
-local zsocket_sub_mt = {
+local zsock_sub_mt = {
 _has_state = false,
 setopt = zsock_setopt,
 getopt = zsock_getopt,
@@ -317,9 +317,9 @@ bind = zsock_bind,
 connect = zsock_connect,
 close = zsock_close,
 }
-zsocket_sub_mt.__index = zsocket_sub_mt
+zsock_sub_mt.__index = zsock_sub_mt
 
-local zsocket_state_mt = {
+local zsock_state_mt = {
 _has_state = true,
 send = zsock_send,
 setopt = zsock_setopt,
@@ -329,29 +329,29 @@ bind = zsock_bind,
 connect = zsock_connect,
 close = zsock_close,
 }
-zsocket_state_mt.__index = zsocket_state_mt
+zsock_state_mt.__index = zsock_state_mt
 
 local type_info = {
 	-- publish/subscribe sockets
-	[zmq.PUB]  = { mt = zsocket_mt, enable_recv = false, recv = false, send = true },
-	[zmq.SUB]  = { mt = zsocket_sub_mt, enable_recv = true,  recv = true, send = false },
+	[zmq.PUB]  = { mt = zsock_mt, enable_recv = false, recv = false, send = true },
+	[zmq.SUB]  = { mt = zsock_sub_mt, enable_recv = true,  recv = true, send = false },
 	-- push/pull sockets
-	[zmq.PUSH] = { mt = zsocket_mt, enable_recv = false, recv = false, send = true },
-	[zmq.PULL] = { mt = zsocket_no_send_mt, enable_recv = true,  recv = true, send = false },
+	[zmq.PUSH] = { mt = zsock_mt, enable_recv = false, recv = false, send = true },
+	[zmq.PULL] = { mt = zsock_no_send_mt, enable_recv = true,  recv = true, send = false },
 	-- two-way pair socket
-	[zmq.PAIR] = { mt = zsocket_mt, enable_recv = true,  recv = true, send = true },
+	[zmq.PAIR] = { mt = zsock_mt, enable_recv = true,  recv = true, send = true },
 	-- request/response sockets
-	[zmq.REQ]  = { mt = zsocket_state_mt, enable_recv = false, recv = true, send = true },
-	[zmq.REP]  = { mt = zsocket_state_mt, enable_recv = true,  recv = true, send = true },
+	[zmq.REQ]  = { mt = zsock_state_mt, enable_recv = false, recv = true, send = true },
+	[zmq.REP]  = { mt = zsock_state_mt, enable_recv = true,  recv = true, send = true },
 	-- extended request/response sockets
-	[zmq.XREQ] = { mt = zsocket_mt, enable_recv = true, recv = true, send = true },
-	[zmq.XREP] = { mt = zsocket_mt, enable_recv = true,  recv = true, send = true },
+	[zmq.XREQ] = { mt = zsock_mt, enable_recv = true, recv = true, send = true },
+	[zmq.XREP] = { mt = zsock_mt, enable_recv = true,  recv = true, send = true },
 }
 
-local function zsocket_wrap(s, s_type, loop, msg_cb, err_cb)
+local function zsock_wrap(s, s_type, loop, msg_cb, err_cb)
 	local tinfo = type_info[s_type]
 	handler = { handle_msg = msg_cb, handle_error = err_cb}
-	-- create zsocket
+	-- create zmq socket
 	local self = {
 		s_type = x_type,
 		socket = s,
@@ -403,10 +403,10 @@ local function create(self, s_type, msg_cb, err_cb)
 	if not s then return nil, err end
 
 	-- wrap socket.
-	return zsocket_wrap(s, s_type, self.loop, msg_cb, err_cb)
+	return zsock_wrap(s, s_type, self.loop, msg_cb, err_cb)
 end
 
-module'handler.zsocket'
+module'handler.zmq'
 
 local meta = {}
 meta.__index = meta
@@ -453,7 +453,7 @@ function meta:term()
 	return self.ctx:term()
 end
 
-function new(loop, io_threads)
+function init(loop, io_threads)
 	-- create ZeroMQ context
 	local ctx, err = zmq.init(io_threads)
 	if not ctx then return nil, err end

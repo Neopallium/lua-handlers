@@ -20,11 +20,11 @@
 
 local tcp = require'handler.tcp'
 local acceptor = require'handler.acceptor'
-local zsocket = require'handler.zsocket'
+local zmq = require'handler.zmq'
 local ev = require'ev'
 local loop = ev.Loop.default
 
-local ctx = zsocket.new(loop, 1)
+local ctx = zmq.init(loop, 1)
 
 local zpub = ctx:pub()
 

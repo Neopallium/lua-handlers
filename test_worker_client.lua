@@ -18,12 +18,12 @@
 -- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 -- THE SOFTWARE.
 
-local zsocket = require'handler.zsocket'
+local zmq = require'handler.zmq'
 local ev = require'ev'
 local loop = ev.Loop.default
 local socket = require'socket'
 
-local ctx = zsocket.new(loop, 1)
+local ctx = zmq.init(loop, 1)
 
 local function get_next_job(sock, last_job_response)
 	-- send job request

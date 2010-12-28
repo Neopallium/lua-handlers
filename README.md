@@ -31,15 +31,15 @@ curl -O "https://github.com/Neopallium/lua-handlers/raw/master/lua-handler-http-
 luarocks install lua-handler-http-scm-0.rockspec
 
 
-Install optional sub-package lua-handler-zsocket:
+Install optional sub-package lua-handler-zmq:
 
 curl -O "https://github.com/iamaleksey/lua-zmq/raw/master/rockspecs/lua-zmq-scm-0.rockspec"
 
 luarocks install lua-zmq-scm-0.rockspec
 
-curl -O "https://github.com/Neopallium/lua-handlers/raw/master/lua-handler-zsocket-scm-0.rockspec"
+curl -O "https://github.com/Neopallium/lua-handlers/raw/master/lua-handler-zmq-scm-0.rockspec"
 
-luarocks install lua-handler-zsocket-scm-0.rockspec
+luarocks install lua-handler-zmq-scm-0.rockspec
 
 
 Dependencies
@@ -54,7 +54,7 @@ Dependencies for optional lua-handler-http package:
 
 * [Lua-http-parser](https://github.com/Neopallium/lua-http-parser)
 
-Dependencies for optional lua-handler-zsocket package:
+Dependencies for optional lua-handler-zmq package:
 
 * [ZeroMQ](http://www.zeromq.org/) requires at least 2.1.0
 * [ZeroMQ-lua](http://github.com/Neopallium/lua-zmq)
