@@ -37,71 +37,71 @@ local mark_SNDMORE = {}
 local default_send_max = 10
 local default_recv_max = 10
 
-local function worker_getopt(this, ...)
-	return this.socket:getopt(...)
+local function zsock_getopt(self, ...)
+	return self.socket:getopt(...)
 end
 
-local function worker_setopt(this, ...)
-	return this.socket:setopt(...)
+local function zsock_setopt(self, ...)
+	return self.socket:setopt(...)
 end
 
-local function worker_sub(this, filter)
-	return this.socket:setopt(z_SUBSCRIBE, filter)
+local function zsock_sub(self, filter)
+	return self.socket:setopt(z_SUBSCRIBE, filter)
 end
 
-local function worker_unsub(this, filter)
-	return this.socket:setopt(z_UNSUBSCRIBE, filter)
+local function zsock_unsub(self, filter)
+	return self.socket:setopt(z_UNSUBSCRIBE, filter)
 end
 
-local function worker_identity(this, filter)
-	return this.socket:setopt(z_IDENTITY, filter)
+local function zsock_identity(self, filter)
+	return self.socket:setopt(z_IDENTITY, filter)
 end
 
-local function worker_bind(this, ...)
-	return this.socket:bind(...)
+local function zsock_bind(self, ...)
+	return self.socket:bind(...)
 end
 
-local function worker_connect(this, ...)
-	return this.socket:connect(...)
+local function zsock_connect(self, ...)
+	return self.socket:connect(...)
 end
 
-local function worker_close(this)
-	this.is_closing = true
-	if #this.send_queue == 0 or this.has_error then
-		this.io_send:stop(this.loop)
-		this.io_recv:stop(this.loop)
-		this.io_idle:stop(this.loop)
-		this.socket:close()
+local function zsock_close(self)
+	self.is_closing = true
+	if #self.send_queue == 0 or self.has_error then
+		self.io_send:stop(self.loop)
+		self.io_recv:stop(self.loop)
+		self.io_idle:stop(self.loop)
+		self.socket:close()
 	end
 end
 
-local function worker_handle_error(this, loc, err)
-	local worker = this.worker
-	local errFunc = worker.handle_error
-	this.has_error = true -- mark socket as bad.
+local function zsock_handle_error(self, err)
+	local handler = self.handler
+	local errFunc = handler.handle_error
+	self.has_error = true -- mark socket as bad.
 	if errFunc then
-		errFunc(this, loc, err)
+		errFunc(self, err)
 	else
-		print('zsocket: ' .. loc .. ': error ', err)
+		print('zsocket: error ', err)
 	end
-	worker_close(this)
+	zsock_close(self)
 end
 
-local function worker_enable_idle(this, enable)
-	if enable == this.idle_enabled then return end
-	this.idle_enabled = enable
+local function zsock_enable_idle(self, enable)
+	if enable == self.idle_enabled then return end
+	self.idle_enabled = enable
 	if enable then
-		this.io_idle:start(this.loop)
+		self.io_idle:start(self.loop)
 	else
-		this.io_idle:stop(this.loop)
+		self.io_idle:stop(self.loop)
 	end
 end
 
-local function worker_send_data(this)
-	local send_max = this.send_max
+local function zsock_send_data(self)
+	local send_max = self.send_max
 	local count = 0
-	local s = this.socket
-	local queue = this.send_queue
+	local s = self.socket
+	local queue = self.send_queue
 
 	repeat
 		local data = queue[1]
@@ -115,14 +115,14 @@ local function worker_send_data(this)
 			-- got timeout error block writes.
 			if err == 'timeout' then
 				-- enable write IO callback.
-				this.send_enabled = false
-				if not this.send_blocked then
-					this.io_send:start(this.loop)
-					this.send_blocked = true
+				self.send_enabled = false
+				if not self.send_blocked then
+					self.io_send:start(self.loop)
+					self.send_blocked = true
 				end
 			else
-				-- socket error
-				worker_handle_error(this, 'send', err)
+				-- report error
+				zsock_handle_error(self, err)
 			end
 			return
 		else
@@ -133,20 +133,20 @@ local function worker_send_data(this)
 				tremove(queue, 1)
 			else
 				-- finished whole message.
-				if this._has_state then
+				if self._has_state then
 					-- switch to receiving state.
-					this.state = "RECV_ONLY"
-					this.recv_enabled = true
-					-- make sure idle worker is running.
-					worker_enable_idle(this, true)
+					self.state = "RECV_ONLY"
+					self.recv_enabled = true
+					-- make sure idle watcher is running.
+					zsock_enable_idle(self, true)
 				end
 			end
 			-- check if queue is empty
 			if #queue == 0 then
-				this.send_enabled = false
-				if this.send_blocked then
-					this.io_send:stop(this.loop)
-					this.send_blocked = false
+				self.send_enabled = false
+				if self.send_blocked then
+					self.io_send:stop(self.loop)
+					self.send_blocked = false
 				end
 				-- finished queue is empty
 				return
@@ -155,19 +155,19 @@ local function worker_send_data(this)
 		count = count + 1
 	until count >= send_max
 	-- hit max send and still have more data to send
-	this.send_enabled = true
-	-- make sure idle worker is running.
-	worker_enable_idle(this, true)
+	self.send_enabled = true
+	-- make sure idle watcher is running.
+	zsock_enable_idle(self, true)
 	return
 end
 
-local function worker_receive_data(this)
-	local recv_max = this.recv_max
+local function zsock_receive_data(self)
+	local recv_max = self.recv_max
 	local count = 0
-	local s = this.socket
-	local worker = this.worker
-	local msg = this.recv_msg
-	this.recv_msg = nil
+	local s = self.socket
+	local handler = self.handler
+	local msg = self.recv_msg
+	self.recv_msg = nil
 
 	repeat
     local data, err = s:recv(z_NOBLOCK)
@@ -175,16 +175,16 @@ local function worker_receive_data(this)
 			-- check for blocking.
 			if err == 'timeout' then
 				-- check if we received a partial message.
-				this.recv_msg = msg
+				self.recv_msg = msg
 				-- recv blocked
-				this.recv_enabled = false
-				if not this.recv_blocked then
-					this.io_recv:start(this.loop)
-					this.recv_blocked = true
+				self.recv_enabled = false
+				if not self.recv_blocked then
+					self.io_recv:start(self.loop)
+					self.recv_blocked = true
 				end
 			else
-				-- socket error
-				worker_handle_error(this, 'receive', err)
+				-- report error
+				zsock_handle_error(self, err)
 			end
 			return
 		end
@@ -203,20 +203,20 @@ local function worker_receive_data(this)
 		end
 		if more == 0 then
 			-- finished receiving whole message
-			if this._has_state then
+			if self._has_state then
 				-- switch to sending state.
-				this.state = "SEND_ONLY"
+				self.state = "SEND_ONLY"
 			end
-			-- pass read message to worker
-			err = worker.handle_msg(this, msg)
+			-- pass read message to handler
+			err = handler.handle_msg(self, msg)
 			if err then
-				-- worker error
-				worker_handle_error(this, 'worker', err)
+				-- report error
+				zsock_handle_error(self, err)
 				return
 			end
 			-- we are finished if the state is stil SEND_ONLY
-			if this._has_state and this.state == "SEND_ONLY" then
-				this.recv_enabled = false
+			if self._has_state and self.state == "SEND_ONLY" then
+				self.recv_enabled = false
 				return
 			end
 			msg = nil
@@ -225,12 +225,12 @@ local function worker_receive_data(this)
 	until count >= recv_max
 
 	-- save any partial message.
-	this.recv_msg = msg
+	self.recv_msg = msg
 
 	-- hit max receive and we are not blocked on receiving.
-	this.recv_enabled = true
-	-- make sure idle worker is running.
-	worker_enable_idle(this, true)
+	self.recv_enabled = true
+	-- make sure idle watcher is running.
+	zsock_enable_idle(self, true)
 
 end
 
@@ -246,10 +246,10 @@ local function _queue_msg(queue, msg)
 	end
 end
 
-local function worker_send(this, data, more)
-	local queue = this.send_queue
+local function zsock_send(self, data, more)
+	local queue = self.send_queue
 	-- check if we are in receiving-only state.
-	if this._has_state and this.state == "RECV_ONLY" then
+	if self._has_state and self.state == "RECV_ONLY" then
 		return false, "Can't send when in receiving state."
 	end
 	if type(data) == 'table' then
@@ -265,137 +265,136 @@ local function worker_send(this, data, more)
 		tinsert(queue, mark_SNDMORE)
 	end
 	-- try sending data now.
-	if not this.send_blocked then
-		worker_send_data(this)
+	if not self.send_blocked then
+		zsock_send_data(self)
 	end
 	return true, nil
 end
 
-local function worker_handle_idle(this)
-	if this.recv_enabled then
-		worker_receive_data(this)
+local function zsock_handle_idle(self)
+	if self.recv_enabled then
+		zsock_receive_data(self)
 	end
-	if this.send_enabled then
-		worker_send_data(this)
+	if self.send_enabled then
+		zsock_send_data(self)
 	end
-	if not this.send_enabled and not this.recv_enabled then
-		worker_enable_idle(this, false)
+	if not self.send_enabled and not self.recv_enabled then
+		zsock_enable_idle(self, false)
 	end
 end
 
 local zsocket_mt = {
 _has_state = false,
-send = worker_send,
-setopt = worker_setopt,
-getopt = worker_getopt,
-identity = worker_identity,
-bind = worker_bind,
-connect = worker_connect,
-close = worker_close,
+send = zsock_send,
+setopt = zsock_setopt,
+getopt = zsock_getopt,
+identity = zsock_identity,
+bind = zsock_bind,
+connect = zsock_connect,
+close = zsock_close,
 }
 zsocket_mt.__index = zsocket_mt
 
 local zsocket_no_send_mt = {
 _has_state = false,
-setopt = worker_setopt,
-getopt = worker_getopt,
-identity = worker_identity,
-bind = worker_bind,
-connect = worker_connect,
-close = worker_close,
+setopt = zsock_setopt,
+getopt = zsock_getopt,
+identity = zsock_identity,
+bind = zsock_bind,
+connect = zsock_connect,
+close = zsock_close,
 }
 zsocket_no_send_mt.__index = zsocket_no_send_mt
 
 local zsocket_sub_mt = {
 _has_state = false,
-setopt = worker_setopt,
-getopt = worker_getopt,
-sub = worker_sub,
-unsub = worker_unsub,
-identity = worker_identity,
-bind = worker_bind,
-connect = worker_connect,
-close = worker_close,
+setopt = zsock_setopt,
+getopt = zsock_getopt,
+sub = zsock_sub,
+unsub = zsock_unsub,
+identity = zsock_identity,
+bind = zsock_bind,
+connect = zsock_connect,
+close = zsock_close,
 }
 zsocket_sub_mt.__index = zsocket_sub_mt
 
 local zsocket_state_mt = {
 _has_state = true,
-send = worker_send,
-setopt = worker_setopt,
-getopt = worker_getopt,
-identity = worker_identity,
-bind = worker_bind,
-connect = worker_connect,
-close = worker_close,
+send = zsock_send,
+setopt = zsock_setopt,
+getopt = zsock_getopt,
+identity = zsock_identity,
+bind = zsock_bind,
+connect = zsock_connect,
+close = zsock_close,
 }
 zsocket_state_mt.__index = zsocket_state_mt
 
 local type_info = {
-	-- publish/subscribe workers
+	-- publish/subscribe sockets
 	[zmq.PUB]  = { mt = zsocket_mt, enable_recv = false, recv = false, send = true },
 	[zmq.SUB]  = { mt = zsocket_sub_mt, enable_recv = true,  recv = true, send = false },
-	-- push/pull workers
+	-- push/pull sockets
 	[zmq.PUSH] = { mt = zsocket_mt, enable_recv = false, recv = false, send = true },
 	[zmq.PULL] = { mt = zsocket_no_send_mt, enable_recv = true,  recv = true, send = false },
-	-- two-way pair worker
+	-- two-way pair socket
 	[zmq.PAIR] = { mt = zsocket_mt, enable_recv = true,  recv = true, send = true },
-	-- request/response workers
+	-- request/response sockets
 	[zmq.REQ]  = { mt = zsocket_state_mt, enable_recv = false, recv = true, send = true },
 	[zmq.REP]  = { mt = zsocket_state_mt, enable_recv = true,  recv = true, send = true },
-	-- extended request/response workers
+	-- extended request/response sockets
 	[zmq.XREQ] = { mt = zsocket_mt, enable_recv = true, recv = true, send = true },
 	[zmq.XREP] = { mt = zsocket_mt, enable_recv = true,  recv = true, send = true },
 }
 
 local function zsocket_wrap(s, s_type, loop, msg_cb, err_cb)
 	local tinfo = type_info[s_type]
-	worker = { handle_msg = msg_cb, handle_error = err_cb}
+	handler = { handle_msg = msg_cb, handle_error = err_cb}
 	-- create zsocket
-	local this = {
+	local self = {
 		s_type = x_type,
 		socket = s,
 		loop = loop,
-		worker = worker,
+		handler = handler,
 		send_enabled = false,
 		recv_enabled = false,
 		idle_enabled = false,
 		is_closing = false,
 	}
-	setmetatable(this, tinfo.mt)
+	setmetatable(self, tinfo.mt)
 
 	local fd = s:getopt(zmq.FD)
 	-- create IO watcher.
 	if tinfo.send then
 		local send_cb = function()
 			-- try sending data.
-			worker_send_data(this)
+			zsock_send_data(self)
 		end
-		this.io_send = ev.IO.new(send_cb, fd, ev.WRITE)
-		this.send_blocked = false
-		this.send_queue = {}
-		this.send_max = default_send_max
+		self.io_send = ev.IO.new(send_cb, fd, ev.WRITE)
+		self.send_blocked = false
+		self.send_queue = {}
+		self.send_max = default_send_max
 	end
 	if tinfo.recv then
 		local recv_cb = function()
 			-- try receiving data.
-			worker_receive_data(this)
+			zsock_receive_data(self)
 		end
-		this.io_recv = ev.IO.new(recv_cb, fd, ev.READ)
-		this.recv_blocked = false
-		this.recv_max = default_recv_max
+		self.io_recv = ev.IO.new(recv_cb, fd, ev.READ)
+		self.recv_blocked = false
+		self.recv_max = default_recv_max
 		if tinfo.enable_recv then
-			this.io_recv:start(loop)
+			self.io_recv:start(loop)
 		end
 	end
 	local idle_cb = function()
-		worker_handle_idle(this)
+		zsock_handle_idle(self)
 	end
-	-- create Idle watcher
-	-- this is used to convert ZeroMQ FD's edge-triggered fashion to level-triggered
-	this.io_idle = ev.Idle.new(idle_cb)
+	-- this Idle watcher is used to convert ZeroMQ FD's edge-triggered fashion to level-triggered
+	self.io_idle = ev.Idle.new(idle_cb)
 
-	return this
+	return self
 end
 
 local function create(self, s_type, msg_cb, err_cb)

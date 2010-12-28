@@ -26,7 +26,7 @@ local assert = assert
 local tconcat = table.concat
 
 local ev = require"ev"
-local nsocket = require"handler.nsocket"
+local tcp = require"handler.tcp"
 local lhp = require"http.parser"
 local ltn12 = require"ltn12"
 local headers = require"handler.http.headers"
@@ -72,14 +72,14 @@ function client_mt:close()
 	end
 end
 
-function client_mt:handle_error(loc, err)
+function client_mt:handle_error(err)
 	if err ~= 'closed' then
 		local req = self.cur_req
 		-- if a request is active, signal it that there was an error
 		if req then
-			call_callback(req, 'on_error', self.resp, loc, err)
+			call_callback(req, 'on_error', self.resp, err)
 		end
-		print('httpconnection:', loc, err)
+		print('httpconnection:', err)
 	end
 	-- close connection on all errors.
 	self.is_closed = true
@@ -101,7 +101,7 @@ function client_mt:handle_data(data)
 		return
 	elseif #data ~= bytes_parsed then
 		-- failed to parse response.
-		self:handle_error("http-parser", "failed to parse all received data.")
+		self:handle_error("http-parser: failed to parse all received data.")
 	end
 end
 
@@ -174,7 +174,7 @@ function client_mt:send_body()
 	if self.sent_request_body or not body then return end
 	self.sent_request_body = true
 
-	-- TODO: add 'empty_queue' callback to nsocket to stream request body out.
+	-- TODO: add 'empty_queue' callback to tcp socket to stream request body out.
 	local data = {}
 	local sink = ltn12.sink.table(data)
 	ltn12.pump.all(self.body_src, sink)
@@ -267,7 +267,7 @@ function client(loop, pool)
 
 	create_response_parser(conn)
 
-	conn.sock = nsocket.new(loop, conn, pool.address, pool.port)
+	conn.sock = tcp.new(loop, conn, pool.address, pool.port)
 
 	return conn
 end

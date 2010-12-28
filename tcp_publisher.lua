@@ -18,7 +18,7 @@
 -- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 -- THE SOFTWARE.
 
-local nsocket = require'handler.nsocket'
+local tcp = require'handler.tcp'
 local acceptor = require'handler.acceptor'
 local zsocket = require'handler.zsocket'
 local ev = require'ev'
@@ -33,9 +33,9 @@ zpub:bind("tcp://lo:5555")
 local msg_id = 1
 
 local tcp_client_mt = {
-handle_error = function(this, loc, err)
+handle_error = function(this, err)
 	if err ~= 'closed' then
-		print('tcp_client:', loc, err)
+		print('tcp_client:', err)
 	end
 end,
 handle_connected = function(this)
@@ -50,7 +50,7 @@ tcp_client_mt.__index = tcp_client_mt
 -- new tcp client
 local function new_tcp_client(sck)
 	local this = setmetatable({}, tcp_client_mt)
-	this.sck = nsocket.wrap(loop, this, sck)
+	this.sck = tcp.wrap(loop, this, sck)
 	return this
 end
 

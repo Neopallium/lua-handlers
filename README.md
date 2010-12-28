@@ -51,9 +51,11 @@ Base lua-handler package required dependcies:
 * [LuaSocket](http://w3.impa.br/~diego/software/luasocket/)
 
 Dependencies for optional lua-handler-http package:
+
 * [Lua-http-parser](https://github.com/Neopallium/lua-http-parser)
 
 Dependencies for optional lua-handler-zsocket package:
+
 * [ZeroMQ](http://www.zeromq.org/) requires at least 2.1.0
 * [ZeroMQ-lua](http://github.com/Neopallium/lua-zmq)
 

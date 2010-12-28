@@ -18,35 +18,38 @@
 -- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 -- THE SOFTWARE.
 
-local udp = require'handler.udp'
+local tcp = require'handler.tcp'
 local ev = require'ev'
 local loop = ev.Loop.default
 
-local udp_client_mt = {
+local tcp_client_mt = {
 handle_error = function(this, err)
-	if err ~= 'closed' then
-		print('udp_client.error:', err)
-	end
+	print('tcp_client.error:', err)
 end,
 handle_connected = function(this)
-	print('udp_client.connected:')
+	print('tcp_client.connected')
 end,
 handle_data = function(this, data)
-	print('udp_client.data:',data)
+	print('tcp_client.data:', data)
 end,
 }
-udp_client_mt.__index = udp_client_mt
+tcp_client_mt.__index = tcp_client_mt
 
--- new udp client
-local function new_udp_client(host, port)
-	local this = setmetatable({}, udp_client_mt)
-	this.sck = udp.new(loop, this, host, port)
+-- new tcp client
+local function new_tcp_client(host, port)
+	local this = setmetatable({}, tcp_client_mt)
+	this.sck = tcp.new(loop, this, host, port)
 	return this
 end
 
-local host = arg[1] or "*"
-local port = arg[2] or 8081
-local client = new_udp_client(host, port)
+-- new tcp server
+local function new_server(port, handler)
+	print('New tcp server listen on: ' .. port)
+	return acceptor.new(loop, handler, '*', port, 1024)
+end
+
+local host, port = (arg[1] or 'localhost:8081'):match('^([^:]*):(.*)$')
+local client = new_tcp_client(host, port)
 
 loop:loop()
 
