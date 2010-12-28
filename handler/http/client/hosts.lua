@@ -26,7 +26,7 @@ local tremove = table.remove
 
 local httpconnection = require"handler.http.connection"
 
-local MAX_CONNECTIONS_PER_HOST = 4
+local MAX_CONNECTIONS_PER_HOST = 8
 
 local host_mt = {}
 host_mt.__index = host_mt
@@ -140,7 +140,7 @@ function new(client)
 	}, hosts_cache_mt)
 end
 
-function set_max_connections_per_host_limit(limit)
-	MAX_CONNECTIONS_PER_HOST = limit
+function set_max_connections_per_host(max)
+	MAX_CONNECTIONS_PER_HOST = max
 end
 
