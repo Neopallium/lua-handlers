@@ -185,7 +185,7 @@ local function fixate_form_content(self)
 			if type(val) == 'string' then
 				-- no extra headers, just append the value
 				parts, c_length = append(content, parts, c_length,
-					'\r\n\r\n' .. v .. '\r\n')
+					'\r\n\r\n' .. val .. '\r\n')
 			else
 				-- check if the value is a file object.
 				if val.object_type == 'file' then
