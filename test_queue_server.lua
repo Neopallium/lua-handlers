@@ -36,7 +36,7 @@ TODO:
 ]]
 
 -- define request handler
-function handle_msg(sock, msg)
+local function handle_msg(sock, msg)
 print('server:', unpack(msg))
 	local addr = {}
 	-- get address parts of message

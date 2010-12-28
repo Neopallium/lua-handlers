@@ -25,7 +25,7 @@ local loop = ev.Loop.default
 local ctx = zsocket.new(loop, 1)
 
 -- define request handler
-function handle_msg(sock, data)
+local function handle_msg(sock, data)
   print("client request:\n", unpack(data))
 	assert(sock:send(data))
 end

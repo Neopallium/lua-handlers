@@ -25,7 +25,7 @@ local loop = ev.Loop.default
 local ctx = zsocket.new(loop, 1)
 
 -- define response handler
-function handle_msg(sock, data)
+local function handle_msg(sock, data)
   print("server response:", unpack(data))
 end
 

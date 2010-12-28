@@ -32,7 +32,7 @@ print('send job request')
 end
 
 -- define response handler
-function handle_job(sock, data)
+local function handle_job(sock, data)
   print("got job:\n", data)
 	-- DO WORK
 	socket.sleep(1)
@@ -63,7 +63,7 @@ end
 
 local queue_start_time = nil
 -- subscribe to queue server to detect server restarts.
-function handle_sub(sock, data)
+local function handle_sub(sock, data)
 	if not queue_start_time then
 		print('Got first queue start time message.')
 		-- we just started so this is our first message from the server.
