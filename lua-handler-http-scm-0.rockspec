@@ -21,8 +21,11 @@ build	= {
 		lua = {
 			['handler.http.client']  = "handler/http/client.lua",
 			['handler.http.client.request']  = "handler/http/client/request.lua",
+			['handler.http.client.hosts']  = "handler/http/client/hosts.lua",
 			['handler.http.connection']  = "handler/http/connection.lua",
 			['handler.http.headers']  = "handler/http/headers.lua",
+			['handler.http.file']  = "handler/http/file.lua",
+			['handler.http.form']  = "handler/http/form.lua",
 		}
 	}
 }
