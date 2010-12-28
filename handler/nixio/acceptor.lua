@@ -26,6 +26,10 @@ local ev = require"ev"
 local nixio = require"nixio"
 local new_socket = nixio.socket
 
+local function n_assert(test, errno, msg)
+	return assert(test, msg)
+end
+
 local acceptor_mt = {
 set_accept_max = function(self, max)
 	self.accept_max = max
@@ -37,34 +41,75 @@ end,
 }
 acceptor_mt.__index = acceptor_mt
 
-local function acceptor_wrap(loop, handler, server, is_udp, backlog)
+local function sock_new_bind_listen(loop, handler, domain, _type, host, port, backlog)
+	local is_dgram = (_type == 'dgram')
+	-- nixio uses nil to mean any local address.
+	if host == '*' then host = nil end
+	-- create nixio socket
+	local server = new_socket(domain, _type)
+
 	-- create acceptor
 	local self = {
 		loop = loop,
 		handler = handler,
 		server = server,
+		host = host,
+		port = port,
 		-- max sockets to try to accept on one event
 		accept_max = 100,
 		backlog = backlog,
 	}
 	setmetatable(self, acceptor_mt)
 
-	-- TODO: fix accepting of UDP sockets.
-
 	-- make nixio socket non-blocking
 	server:setblocking(false)
 	-- create callback closure
-	local accept_cb = function()
-		repeat
-			local sck, err = server:accept()
-			if sck then
-				handler(sck)
-			else
-				if err ~= 'timeout' then
+	local accept_cb
+	if is_dgram then
+		accept_cb = function()
+			local max = self.accept_max
+			local count = 0
+			repeat
+				local data, c_ip, c_port = server:recvfrom(8192)
+				if not data then
+					if data ~= false then
+						print('dgram_accept.error:', c_ip, c_port)
+					end
+					break
+				else
+					-- make a duplicate server socket
+					local sock = new_socket(domain, _type)
+					n_assert(sock:setsockopt('socket', 'reuseaddr', 1))
+					n_assert(sock:bind(host, port))
+					-- connect dupped socket to client's ip:port
+					n_assert(sock:connect(c_ip, c_port))
+					-- pass client socket to new connection handler.
+					local client = handler(sock)
+					-- call connected callback, socket is ready for sending data.
+					client:handle_connected()
+					-- handle first data block from udp client
+					client:handle_data(data)
 				end
-				break
-			end
-		until not err
+				count = count + 1
+			until count >= max
+		end
+	else
+		accept_cb = function()
+			local max = self.accept_max
+			local count = 0
+			repeat
+				local client, errno, err = server:accept()
+				if not client then
+					if client ~= false then
+						print('stream_accept.error:', errno, err)
+					end
+					break
+				else
+					handler(client)
+				end
+				count = count + 1
+			until count >= max
+		end
 	end
 	-- create IO watcher.
 	local fd = server:fileno()
@@ -72,27 +117,13 @@ local function acceptor_wrap(loop, handler, server, is_udp, backlog)
 
 	self.io:start(loop)
 
-	return self
-end
-
-local function n_assert(test, errno, msg)
-	return assert(test, msg)
-end
-
-local function sock_new_bind_listen(loop, handler, domain, _type, host, port, backlog)
-	-- nixio uses nil to mean any local address.
-	if host == '*' then host = nil end
-	-- create nixio socket
-	local sock = new_socket(domain, _type)
-	-- wrap server socket
-	local self = acceptor_wrap(loop, handler, (_type == 'dgram'), sock)
 	-- allow the address to be re-used.
-	n_assert(sock:setsockopt('socket', 'reuseaddr', 1), 'Failed to set reuseaddr option.')
+	n_assert(server:setsockopt('socket', 'reuseaddr', 1))
 	-- bind socket to local host:port
-	n_assert(sock:bind(host, port))
-	if _type == 'stream' then
+	n_assert(server:bind(host, port))
+	if not is_dgram then
 		-- set the socket to listening mode
-		n_assert(sock:listen(backlog or 256))
+		n_assert(server:listen(backlog or 256))
 	end
 
 	return self
@@ -118,9 +149,5 @@ end
 
 function unix(loop, handler, path, backlog)
 	return sock_new_bind_listen(loop, handler, 'unix', 'stream', path, nil, backlog)
-end
-
-function wrap(loop, handler, server)
-	return acceptor_wrap(loop, handler, sock)
 end
 
