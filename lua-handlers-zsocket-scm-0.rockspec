@@ -1,27 +1,25 @@
 #!/usr/bin/env lua
 
-package	= 'lua-handler'
+package	= 'lua-handler-zsocket'
 version	= 'scm-0'
 source	= {
 	url	= 'git://github.com/Neopallium/lua-handlers.git'
 }
 description	= {
-	summary	= "Socket handler class that wrap lua-ev/luasocket.",
+	summary	= "ZeroMQ async. handler class.",
 	detailed	= '',
 	homepage	= 'https://github.com/Neopallium/lua-handlers',
 	license	= 'MIT',
 }
 dependencies = {
-	'lua >= 5.1',
-	'luasocket',
-	'lua-ev',
+	'lua-handler',
+	'lua-zmq',
 }
 build	= {
 	type		= 'none',
 	install = {
 		lua = {
-			['handler.acceptor'] = "handler/acceptor.lua",
-			['handler.nsocket']  = "handler/nsocket.lua",
+			['handler.zsocket']  = "handler/zsocket.lua",
 		}
 	}
 }
