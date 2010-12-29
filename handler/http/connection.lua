@@ -206,6 +206,7 @@ local function create_response_parser(self)
 	local headers
 	local cur_header
 	local parser
+	local body
 
 	function self.on_message_begin()
 		-- setup response object.
@@ -213,6 +214,7 @@ local function create_response_parser(self)
 		headers = headers_new()
 		resp.headers = headers
 		self.resp = resp
+		body = nil
 	end
 
 	function self.on_header_field(header)
@@ -242,7 +244,9 @@ local function create_response_parser(self)
 	function self.on_body(data)
 		if self.skip_complete then return end
 		-- call request's on_data callback
-		call_callback(self.cur_req, 'on_data', resp, data)
+		if data ~= nil then
+			body = (body or '') .. data
+		end
 	end
 
 	function self.on_message_complete()
@@ -252,6 +256,10 @@ local function create_response_parser(self)
 			return
 		end
 		local req = self.cur_req
+		if body ~= nil then
+			call_callback(req, 'on_data', resp, body)
+			body = nil
+		end
 		-- we are done with this request.
 		self.cur_req = nil
 		-- put connection back into the pool.
@@ -264,6 +272,7 @@ local function create_response_parser(self)
 		resp = nil
 		headers = nil
 		self.resp = nil
+		body = nil
 	end
 
 	parser = lhp.response(self)
