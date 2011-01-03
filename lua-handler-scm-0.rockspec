@@ -12,7 +12,6 @@ description	= {
 	license	= 'MIT',
 }
 dependencies = {
-	'lua >= 5.1',
 	'luasocket',
 	'lua-ev',
 }

@@ -13,6 +13,7 @@ description	= {
 }
 dependencies = {
 	'nixio',
+	'lua-ev',
 }
 build	= {
 	type		= 'none',

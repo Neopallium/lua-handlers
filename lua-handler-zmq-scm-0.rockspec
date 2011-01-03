@@ -12,6 +12,7 @@ description	= {
 	license	= 'MIT',
 }
 dependencies = {
+	'lua-ev',
 	'lua-zmq',
 }
 build	= {

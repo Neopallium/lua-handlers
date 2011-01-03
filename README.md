@@ -55,20 +55,22 @@ Dependencies
 ------------
 ### Base lua-handler package required dependcies:
 
-* [Lua](http://www.lua.org/)
 * [Lua-ev](https://github.com/brimworks/lua-ev)
 * [LuaSocket](http://w3.impa.br/~diego/software/luasocket/)
 
 ### Dependencies for optional lua-handler-http package:
 
+* [Lua-ev](https://github.com/brimworks/lua-ev)
 * [Lua-http-parser](https://github.com/Neopallium/lua-http-parser)
 
 ### Dependencies for optional lua-handler-nixio package:
 
+* [Lua-ev](https://github.com/brimworks/lua-ev)
 * [Nixio](http://dev.luci.freifunk-halle.net/nixio/doc/)
 
 ### Dependencies for optional lua-handler-zmq package:
 
+* [Lua-ev](https://github.com/brimworks/lua-ev)
 * [ZeroMQ](http://www.zeromq.org/) requires at least 2.1.0
 * [ZeroMQ-lua](http://github.com/Neopallium/lua-zmq)
 
