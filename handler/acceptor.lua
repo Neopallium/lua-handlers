@@ -24,6 +24,8 @@ local assert = assert
 
 local socket = require"socket"
 local ev = require"ev"
+local connection = require"handler.connection"
+local wrap_connected = connection.wrap_connected
 
 local acceptor_mt = {
 set_accept_max = function(self, max)
@@ -36,31 +38,109 @@ end,
 }
 acceptor_mt.__index = acceptor_mt
 
-local function acceptor_wrap(loop, handler, server, backlog)
+local function acceptor_new_bind_listen(loop, handler, is_dgram, addr, port, backlog)
+	local server
+
+	-- setup server socket.
+	if is_dgram then
+		server = socket.udp()
+	else
+		server = socket.tcp()
+	end
+	assert(server:setoption('reuseaddr', true), 'server:setoption failed')
+	-- bind server
+	if is_dgram then
+		assert(server:setsockname(addr, port))
+	else
+		assert(server:bind(addr, port))
+		assert(server:listen(backlog or 256))
+	end
+
 	-- create acceptor
 	local self = {
 		loop = loop,
 		handler = handler,
 		server = server,
+		addr = addr,
+		port = port,
 		-- max sockets to try to accept on one event
 		accept_max = 100,
 		backlog = backlog,
 	}
 	setmetatable(self, acceptor_mt)
 
+	-- set socket to non-blocking mode.
 	server:settimeout(0)
+
 	-- create callback closure
-	local accept_cb = function()
-		repeat
-			local sck, err = server:accept()
-			if sck then
-				handler(sck)
-			else
-				if err ~= 'timeout' then
+	local accept_cb
+	if is_dgram then
+		local udp_clients = setmetatable({}, {__mode="v"})
+		accept_cb = function()
+			local max = self.accept_max
+			local count = 0
+			repeat
+				local data, c_ip, c_port = server:receivefrom(8192)
+				if data then
+					local client
+					local c_key = c_ip .. tostring(c_port)
+					-- look for existing client socket.
+					local sock = udp_clients[c_key]
+					-- check if socket is still valid
+					if sock and sock:is_closed() then
+						sock = nil
+					end
+					-- if no cached socket, make a new one.
+					if not sock then
+						sock = socket.udp()
+						assert(sock:setoption('reuseaddr', true), 'server:setoption failed')
+						-- bind client socket to same addr:port as server socket.
+						assert(sock:setsockname(addr, port))
+						-- connect socket to client's ip:port
+						assert(sock:setpeername(c_ip, c_port))
+						-- wrap lua socket.
+						sock = wrap_connected(loop, nil, sock)
+						udp_clients[c_key] = sock
+						-- pass client socket to new connection handler.
+						client = handler(sock)
+						-- call connected callback, socket is ready for sending data.
+						client:handle_connected()
+					else
+						client = sock.handler
+					end
+					-- handle datagram from udp client.
+					client:handle_data(data)
+				else
+					local err = c_ip
+					if err ~= 'timeout' then
+						print('dgram_accept.error:', err)
+					end
+					break
 				end
-				break
-			end
-		until not err
+				count = count + 1
+			until count >= max
+		end
+	else
+		accept_cb = function()
+			local max = self.accept_max
+			local count = 0
+			repeat
+				local sock, err = server:accept()
+				if sock then
+					-- wrap lua socket
+					sock = wrap_connected(loop, nil, sock)
+					local client = handler(sock)
+					-- call connected callback, socket is ready for sending data.
+					client:handle_connected()
+				else
+					if err ~= 'timeout' then
+						print('stream_accept.error:', err)
+					end
+					break
+				end
+				count = count + 1
+			until count >= max
+		end
 	end
 	-- create IO watcher.
 	local fd = server:getfd()
@@ -73,23 +153,11 @@ end
 
 module'handler.acceptor'
 
-function new(loop, handler, addr, port, backlog)
-	-- setup server socket.
-	local server = socket.tcp()
-	-- wrap server socket
-	local self = acceptor_wrap(loop, handler, server)
-	assert(server:setoption('reuseaddr', true), 'server:setoption failed')
-	-- bind server
-	assert(server:bind(addr, port))
-	assert(server:listen(backlog or 256))
-
-	return self
+function tcp(loop, handler, addr, port, backlog)
+	return acceptor_new_bind_listen(loop, handler, false, addr, port, backlog)
 end
 
-function wrap(loop, handler, server)
-	-- make server socket non-blocking.
-	server:settimeout(0)
-	-- wrap server socket
-	return acceptor_wrap(loop, handler, server)
+function udp(loop, handler, addr, port, backlog)
+	return acceptor_new_bind_listen(loop, handler, true, addr, port, backlog)
 end
 

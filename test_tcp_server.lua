@@ -19,38 +19,38 @@
 -- THE SOFTWARE.
 
 local acceptor = require'handler.acceptor'
-local zmq = require'handler.zmq'
 local ev = require'ev'
 local loop = ev.Loop.default
 
-local ctx = zmq.init(loop, 1)
-
-local zpub = ctx:pub()
-
-zpub:bind("tcp://lo:5555")
-
-local msg_id = 1
-
 local tcp_client_mt = {
-handle_error = function(this, err)
-	if err ~= 'closed' then
-		print('tcp_client:', err)
-	end
+handle_error = function(self, err)
+	print('tcp_client.error:', self, err)
+	self.timer:stop(loop)
 end,
-handle_connected = function(this)
+handle_connected = function(self)
+	print('tcp_client.connected:', self)
 end,
-handle_data = function(this, data)
-	zpub:send(tostring(msg_id) .. ':' .. data)
-  msg_id = msg_id + 1
+handle_data = function(self, data)
+	print('tcp_client.data:', self, data)
+end,
+handle_timer = function(self)
+	self.sock:send('ping\n')
 end,
 }
 tcp_client_mt.__index = tcp_client_mt
 
 -- new tcp client
 local function new_tcp_client(sock)
+print('new_tcp_client:', sock)
 	local self = setmetatable({}, tcp_client_mt)
 	sock:sethandler(self)
 	self.sock = sock
+
+	-- create timer watcher
+	self.timer = ev.Timer.new(function()
+		self:handle_timer()
+	end, 1.0, 1.0)
+	self.timer:start(loop)
 	return self
 end
 

@@ -26,8 +26,8 @@ local tostring = tostring
 local ev = require"ev"
 local nixio = require"nixio"
 local new_socket = nixio.socket
-local socket = require"handler.nixio.socket"
-local wrap_connected = socket.wrap_connected
+local connection = require"handler.nixio.connection"
+local wrap_connected = connection.wrap_connected
 
 local function n_assert(test, errno, msg)
 	return assert(test, msg)

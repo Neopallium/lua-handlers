@@ -12,7 +12,6 @@ description	= {
 	license	= 'MIT',
 }
 dependencies = {
-	'lua-handler',
 	'lua-zmq',
 }
 build	= {

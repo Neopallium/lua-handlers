@@ -26,7 +26,7 @@ local assert = assert
 local tconcat = table.concat
 
 local ev = require"ev"
-local tcp = require"handler.tcp"
+local connection = require"handler.connection"
 local lhp = require"http.parser"
 local headers = require"handler.http.headers"
 local headers_new = headers.new
@@ -293,7 +293,7 @@ function client(loop, pool)
 
 	create_response_parser(conn)
 
-	conn.sock = tcp.new(loop, conn, pool.address, pool.port)
+	conn.sock = connection.tcp(loop, conn, pool.address, pool.port)
 
 	return conn
 end

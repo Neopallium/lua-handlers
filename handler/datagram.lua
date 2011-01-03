@@ -20,6 +20,7 @@
 
 local setmetatable = setmetatable
 local print = print
+local assert = assert
 
 local socket = require"socket"
 local ev = require"ev"
@@ -61,12 +62,8 @@ local function udp_handle_error(self, err)
 	udp_close(self)
 end
 
-local function udp_send(self, data)
-	return self.socket:send(buf)
-end
-
 local function udp_sendto(self, data, ip, port)
-	return self.socket:sendto(buf, ip, port)
+	return self.socket:sendto(data, ip, port)
 end
 
 local function udp_receive_data(self)
@@ -102,7 +99,6 @@ local function udp_receive_data(self)
 end
 
 local udp_mt = {
-send = udp_send,
 sendto = udp_sendto,
 getsockname = udp_getsockname,
 setsockname = udp_setsockname,
@@ -126,6 +122,7 @@ local function udp_wrap(loop, handler, sck)
 
 	sck:settimeout(0)
 	local fd = sck:getfd()
+
 	-- create callback closure
 	local read_cb = function()
 		udp_receive_data(self)
@@ -138,11 +135,12 @@ local function udp_wrap(loop, handler, sck)
 	return self
 end
 
-module'handler.udp'
+module'handler.datagram'
 
-function new(loop, handler)
+function new(loop, handler, host, port)
 	-- connect to server.
 	local sck = socket.udp()
+	assert(sck:setsockname(host, port))
 	return udp_wrap(loop, handler, sck)
 end
 

@@ -21,8 +21,8 @@ build	= {
 	install = {
 		lua = {
 			['handler.acceptor'] = "handler/acceptor.lua",
-			['handler.tcp']  = "handler/tcp.lua",
-			['handler.udp']  = "handler/udp.lua",
+			['handler.connection']  = "handler/connection.lua",
+			['handler.datagram']  = "handler/datagram.lua",
 		}
 	}
 }

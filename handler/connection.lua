@@ -24,23 +24,23 @@ local print = print
 local socket = require"socket"
 local ev = require"ev"
 
-local function tcp_getstats(self)
+local function sock_getstats(self)
 	return self.socket:getstats()
 end
 
-local function tcp_setstats(self, ...)
+local function sock_setstats(self, ...)
 	return self.socket:setstats(...)
 end
 
-local function tcp_getsockname(self)
+local function sock_getsockname(self)
 	return self.socket:getsockname()
 end
 
-local function tcp_setoption(self, ...)
+local function sock_setoption(self, ...)
 	return self.socket:setoption(...)
 end
 
-local function tcp_close(self)
+local function sock_close(self)
 	self.is_closing = true
 	if not self.write_buf or self.has_error then
 		self.io_write:stop(self.loop)
@@ -49,7 +49,7 @@ local function tcp_close(self)
 	end
 end
 
-local function tcp_handle_error(self, err)
+local function sock_handle_error(self, err)
 	local handler = self.handler
 	local errFunc = handler.handle_error
 	self.has_error = true -- mark socket as bad.
@@ -58,10 +58,10 @@ local function tcp_handle_error(self, err)
 	else
 		print('tcp socket error:', err)
 	end
-	tcp_close(self)
+	sock_close(self)
 end
 
-local function tcp_send_data(self, buf)
+local function sock_send_data(self, buf)
 	local sock = self.socket
 	local is_blocked = false
 
@@ -78,7 +78,7 @@ local function tcp_send_data(self, buf)
 			self.write_buf = nil
 			if self.is_closing then
 				-- write buffer is empty, finish closing socket.
-				tcp_close(self)
+				sock_close(self)
 				return num, 'closed'
 			end
 		end
@@ -88,7 +88,7 @@ local function tcp_send_data(self, buf)
 			is_blocked = true
 		else
 			-- report error
-			tcp_handle_error(self, err)
+			sock_handle_error(self, err)
 			return nil, err
 		end
 	end
@@ -106,7 +106,7 @@ local function tcp_send_data(self, buf)
 	return num
 end
 
-local function tcp_send(self, data)
+local function sock_send(self, data)
 	local num, err
 	local buf = self.write_buf
 	if buf then
@@ -115,7 +115,7 @@ local function tcp_send(self, data)
 		buf = data
 	end
 	if not self.write_blocked then
-		num, err = tcp_send_data(self, buf)
+		num, err = sock_send_data(self, buf)
 	else
 		-- let the caller know that the socket is blocked and data is being buffered
 		err = 'blocked'
@@ -125,7 +125,7 @@ local function tcp_send(self, data)
 	return #data, err
 end
 
-local function tcp_handle_connected(self)
+local function sock_handle_connected(self)
 	local handler = self.handler
 	self.is_connecting = false
 	local handle_connected = handler.handle_connected
@@ -134,7 +134,7 @@ local function tcp_handle_connected(self)
 	end
 end
 
-local function tcp_receive_data(self)
+local function sock_receive_data(self)
 	local read_len = self.read_len
 	local read_max = self.read_max
 	local handler = self.handler
@@ -152,27 +152,27 @@ local function tcp_receive_data(self)
 				-- check if we where in the connecting state.
 				if is_connecting then
 					is_connecting = false
-					tcp_handle_connected(self)
+					sock_handle_connected(self)
 				end
 				-- no data
 				return true
 			else
 				-- report error
-				tcp_handle_error(self, err)
+				sock_handle_error(self, err)
 				return false, err
 			end
 		end
 		-- check if we where in the connecting state.
 		if is_connecting then
 			is_connecting = false
-			tcp_handle_connected(self)
+			sock_handle_connected(self)
 		end
 		-- pass read data to handler
 		len = len + #data
 		err = handler:handle_data(data)
 		if err then
 			-- report error
-			tcp_handle_error(self, err)
+			sock_handle_error(self, err)
 			return false, err
 		end
 	until len >= read_max
@@ -180,17 +180,27 @@ local function tcp_receive_data(self)
 	return true
 end
 
-local tcp_mt = {
-send = tcp_send,
-getstats = tcp_getstats,
-setstats = tcp_setstats,
-getsockname = tcp_getsockname,
-setoption = tcp_setoption,
-close = tcp_close,
-}
-tcp_mt.__index = tcp_mt
+local function sock_sethandler(self, handler)
+	self.handler = handler
+end
 
-local function tcp_wrap(loop, handler, sck)
+local function sock_is_closed(self)
+	return self.is_closing
+end
+
+local sock_mt = {
+send = sock_send,
+getstats = sock_getstats,
+setstats = sock_setstats,
+getsockname = sock_getsockname,
+setoption = sock_setoption,
+close = sock_close,
+sethandler = sock_sethandler,
+is_closed = sock_is_closed,
+}
+sock_mt.__index = sock_mt
+
+local function sock_wrap(loop, handler, sck, is_connected)
 	-- create tcp socket object
 	local self = {
 		loop = loop,
@@ -202,13 +212,13 @@ local function tcp_wrap(loop, handler, sck)
 		read_max = 65536,
 		is_closing = false,
 	}
-	setmetatable(self, tcp_mt)
+	setmetatable(self, sock_mt)
 
 	sck:settimeout(0)
 	local fd = sck:getfd()
 	-- create callback closure
 	local write_cb = function()
-		local num, err = tcp_send_data(self, self.write_buf)
+		local num, err = sock_send_data(self, self.write_buf)
 		if self.write_buf == nil and not self.is_closed then
 			-- write buffer is empty and socket is still open,
 			-- call drain callback.
@@ -218,48 +228,74 @@ local function tcp_wrap(loop, handler, sck)
 				local err = drain(handler)
 				if err then
 					-- report error
-					tcp_handle_error(self, err)
+					sock_handle_error(self, err)
 				end
 			end
 		end
 	end
 	local read_cb = function()
-		tcp_receive_data(self)
+		sock_receive_data(self)
 	end
-	local connected_cb = function(loop, io, revents)
-		if not self.write_blocked then
-			io:stop(loop)
-		end
-		-- change callback to write_cb
-		io:callback(write_cb)
-		-- check for connect errors by tring to read from the socket.
-		tcp_receive_data(self)
-	end
+
 	-- create IO watcher.
-	self.io_write = ev.IO.new(connected_cb, fd, ev.WRITE)
+	if is_connected then
+		self.io_write = ev.IO.new(write_cb, fd, ev.WRITE)
+		self.is_connecting = false
+	else
+		local connected_cb = function(loop, io, revents)
+			if not self.write_blocked then
+				io:stop(loop)
+			end
+			-- change callback to write_cb
+			io:callback(write_cb)
+			-- check for connect errors by tring to read from the socket.
+			sock_receive_data(self)
+		end
+		self.io_write = ev.IO.new(connected_cb, fd, ev.WRITE)
+		self.io_write:start(loop)
+	end
 	self.io_read = ev.IO.new(read_cb, fd, ev.READ)
 
-	self.io_write:start(loop)
 	self.io_read:start(loop)
 
 	return self
 end
 
-module'handler.tcp'
+module'handler.connection'
 
-function new(loop, handler, host, port)
-	-- connect to server.
+function tcp(loop, handler, host, port)
 	local sck = socket.tcp()
-	local self = tcp_wrap(loop, handler, sck)
+	-- wrap socket.
+	local self = sock_wrap(loop, handler, sck)
+	-- connect socket to host:port
 	local ret, err = sck:connect(host, port)
 	if err and err ~= 'timeout' then
 		-- report error
-		tcp_handle_error(self, err)
+		sock_handle_error(self, err)
 		return nil, err
 	end
 	return self
 end
 
+function udp(loop, handler, host, port)
+	local sck = socket.udp()
+	-- wrap socket.
+	local self = sock_wrap(loop, handler, sck, false)
+	-- connect socket to host:port
+	local ret, err = sck:setpeername(host, port)
+	if err and err ~= 'timeout' then
+		-- report error
+		sock_handle_error(self, err)
+		return nil, err
+	end
+	return self
+end
+
+function wrap_connected(loop, handler, sock)
+	-- wrap socket.
+	return sock_wrap(loop, handler, sock, true)
+end
+
 -- export
-wrap = tcp_wrap
+wrap = sock_wrap
 

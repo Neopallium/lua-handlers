@@ -18,7 +18,7 @@
 -- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 -- THE SOFTWARE.
 
-local tcp = require'handler.tcp'
+local connection = require'handler.connection'
 local ev = require'ev'
 local loop = ev.Loop.default
 
@@ -38,7 +38,7 @@ tcp_client_mt.__index = tcp_client_mt
 -- new tcp client
 local function new_tcp_client(host, port)
 	local this = setmetatable({}, tcp_client_mt)
-	this.sck = tcp.new(loop, this, host, port)
+	this.sck = connection.tcp(loop, this, host, port)
 	return this
 end
 

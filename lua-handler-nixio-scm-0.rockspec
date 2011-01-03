@@ -12,7 +12,6 @@ description	= {
 	license	= 'MIT',
 }
 dependencies = {
-	'lua-handler',
 	'nixio',
 }
 build	= {
@@ -20,6 +19,7 @@ build	= {
 	install = {
 		lua = {
 			['handler.nixio.socket']  = "handler/nixio/socket.lua",
+			['handler.nixio.acceptor']  = "handler/nixio/acceptor.lua",
 		}
 	}
 }

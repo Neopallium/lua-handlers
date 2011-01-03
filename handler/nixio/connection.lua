@@ -250,21 +250,21 @@ local function sock_wrap(loop, handler, sock, is_connected)
 	local read_cb = function()
 		sock_recv_data(self)
 	end
-	local connected_cb = function(loop, io, revents)
-		if not self.write_blocked then
-			io:stop(loop)
-		end
-		-- change callback to write_cb
-		io:callback(write_cb)
-		-- check for connect errors by tring to read from the socket.
-		sock_recv_data(self)
-	end
 
-	-- create read IO watcher.
+	-- create IO watchers.
 	if is_connected then
 		self.io_write = ev.IO.new(write_cb, fd, ev.WRITE)
 		self.is_connecting = false
 	else
+		local connected_cb = function(loop, io, revents)
+			if not self.write_blocked then
+				io:stop(loop)
+			end
+			-- change callback to write_cb
+			io:callback(write_cb)
+			-- check for connect errors by tring to read from the socket.
+			sock_recv_data(self)
+		end
 		self.io_write = ev.IO.new(connected_cb, fd, ev.WRITE)
 		self.io_write:start(loop)
 	end
@@ -293,7 +293,7 @@ local function n_assert(test, errno, msg)
 	return assert(test, msg)
 end
 
-module'handler.nixio.socket'
+module'handler.nixio.connection'
 
 function tcp(loop, handler, host, port)
 	return sock_new_connect(loop, handler, 'inet', 'stream', host, port)
