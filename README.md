@@ -22,7 +22,7 @@ luarocks install lua-handler-scm-0.rockspec
 
 ### Install optional sub-package lua-handler-http:
 
-curl -O "https://github.com/Neopallium/lua-http-parser/raw/master/lua-http-parser-scm-0.rockspec"
+curl -O "https://github.com/brimworks/lua-http-parser/raw/master/lua-http-parser-scm-0.rockspec"
 
 luarocks install lua-http-parser-scm-0.rockspec
 
@@ -63,7 +63,7 @@ Dependencies
 ### Dependencies for optional lua-handler-http package:
 
 * [Lua-ev](https://github.com/brimworks/lua-ev)
-* [Lua-http-parser](https://github.com/Neopallium/lua-http-parser)
+* [Lua-http-parser](https://github.com/brimworks/lua-http-parser)
 
 ### Dependencies for optional lua-handler-nixio package:
 
