@@ -31,6 +31,10 @@ local z_IDENTITY = zmq.IDENTITY
 local z_NOBLOCK = zmq.NOBLOCK
 local z_RCVMORE = zmq.RCVMORE
 local z_SNDMORE = zmq.SNDMORE
+local z_EVENTS = zmq.EVENTS
+local z_POLLIN = zmq.POLLIN
+local z_POLLOUT = zmq.POLLOUT
+local z_POLLIN_OUT = z_POLLIN + z_POLLOUT
 
 local mark_SNDMORE = {}
 
@@ -68,7 +72,6 @@ end
 local function zsock_close(self)
 	self.is_closing = true
 	if #self.send_queue == 0 or self.has_error then
-		self.io_send:stop(self.loop)
 		self.io_recv:stop(self.loop)
 		self.io_idle:stop(self.loop)
 		self.socket:close()
@@ -114,12 +117,10 @@ local function zsock_send_data(self)
 		if not sent then
 			-- got timeout error block writes.
 			if err == 'timeout' then
-				-- enable write IO callback.
-				self.send_enabled = false
-				if not self.send_blocked then
-					self.io_send:start(self.loop)
-					self.send_blocked = true
-				end
+				-- block sending, data will queue until we can send again.
+				self.send_blocked = true
+				-- data in queue, mark socket for sending.
+				self.need_send = true
 			else
 				-- report error
 				zsock_handle_error(self, err)
@@ -132,6 +133,7 @@ local function zsock_send_data(self)
 			if flags == z_SNDMORE then
 				tremove(queue, 1)
 			else
+				count = count + 1
 				-- finished whole message.
 				if self._has_state then
 					-- switch to receiving state.
@@ -143,19 +145,16 @@ local function zsock_send_data(self)
 			end
 			-- check if queue is empty
 			if #queue == 0 then
-				self.send_enabled = false
-				if self.send_blocked then
-					self.io_send:stop(self.loop)
-					self.send_blocked = false
-				end
+				-- enable write callback
+				self.need_send = false
+				self.send_blocked = false
 				-- finished queue is empty
 				return
 			end
 		end
-		count = count + 1
 	until count >= send_max
 	-- hit max send and still have more data to send
-	self.send_enabled = true
+	self.need_send = true
 	-- make sure idle watcher is running.
 	zsock_enable_idle(self, true)
 	return
@@ -174,14 +173,10 @@ local function zsock_receive_data(self)
 		if err then
 			-- check for blocking.
 			if err == 'timeout' then
-				-- check if we received a partial message.
+				-- store any partial message we may have received.
 				self.recv_msg = msg
 				-- recv blocked
 				self.recv_enabled = false
-				if not self.recv_blocked then
-					self.io_recv:start(self.loop)
-					self.recv_blocked = true
-				end
 			else
 				-- report error
 				zsock_handle_error(self, err)
@@ -220,8 +215,8 @@ local function zsock_receive_data(self)
 				return
 			end
 			msg = nil
+			count = count + 1
 		end
-		count = count + 1
 	until count >= recv_max
 
 	-- save any partial message.
@@ -232,6 +227,38 @@ local function zsock_receive_data(self)
 	-- make sure idle watcher is running.
 	zsock_enable_idle(self, true)
 
+end
+
+local function zsock_dispatch_events(self)
+	local s = self.socket
+	local readable = false
+	local writeable = false
+
+	-- check ZMQ_EVENTS
+	local events = s:getopt(z_EVENTS)
+	if events == z_POLLIN_OUT then
+		readable = true
+		writeable = true
+	elseif events == z_POLLIN then
+		readable = true
+	elseif events == z_POLLOUT then
+		writeable = true
+	else
+		-- no events read block until next read event.
+		return zsock_enable_idle(self, false)
+	end
+
+	-- always read when the socket is readable
+	if readable then
+		zsock_receive_data(self)
+	else
+		-- recv is blocked
+		self.recv_enabled = false
+	end
+	-- if socket is writeable and the send queue is not empty
+	if writeable and self.need_send then
+		zsock_send_data(self)
+	end
 end
 
 local function _queue_msg(queue, msg)
@@ -272,13 +299,9 @@ local function zsock_send(self, data, more)
 end
 
 local function zsock_handle_idle(self)
-	if self.recv_enabled then
-		zsock_receive_data(self)
-	end
-	if self.send_enabled then
-		zsock_send_data(self)
-	end
-	if not self.send_enabled and not self.recv_enabled then
+	-- dispatch events.
+	zsock_dispatch_events(self)
+	if not self.need_send and not self.recv_enabled then
 		zsock_enable_idle(self, false)
 	end
 end
@@ -357,7 +380,7 @@ local function zsock_wrap(s, s_type, loop, msg_cb, err_cb)
 		socket = s,
 		loop = loop,
 		handler = handler,
-		send_enabled = false,
+		need_send = false,
 		recv_enabled = false,
 		idle_enabled = false,
 		is_closing = false,
@@ -367,26 +390,18 @@ local function zsock_wrap(s, s_type, loop, msg_cb, err_cb)
 	local fd = s:getopt(zmq.FD)
 	-- create IO watcher.
 	if tinfo.send then
-		local send_cb = function()
-			-- try sending data.
-			zsock_send_data(self)
-		end
-		self.io_send = ev.IO.new(send_cb, fd, ev.WRITE)
 		self.send_blocked = false
 		self.send_queue = {}
 		self.send_max = default_send_max
 	end
 	if tinfo.recv then
 		local recv_cb = function()
-			-- try receiving data.
-			zsock_receive_data(self)
+			-- check for the real events.
+			zsock_dispatch_events(self)
 		end
 		self.io_recv = ev.IO.new(recv_cb, fd, ev.READ)
-		self.recv_blocked = false
 		self.recv_max = default_recv_max
-		if tinfo.enable_recv then
-			self.io_recv:start(loop)
-		end
+		self.io_recv:start(loop)
 	end
 	local idle_cb = function()
 		zsock_handle_idle(self)
