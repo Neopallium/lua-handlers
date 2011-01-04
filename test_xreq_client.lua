@@ -38,7 +38,7 @@ zxreq:connect("tcp://localhost:5555")
 local function io_in_cb()
 	local line = io.read("*l")
 	-- send request message.
-	zxreq:send({"\0", line})
+	zxreq:send({"", "request:", line})
 end
 local io_in = ev.IO.new(io_in_cb, 0, ev.READ)
 io_in:start(loop)
