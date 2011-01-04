@@ -204,7 +204,6 @@ end
 local function create_response_parser(self)
 	local resp
 	local headers
-	local cur_header
 	local parser
 	local body
 
@@ -217,12 +216,8 @@ local function create_response_parser(self)
 		body = nil
 	end
 
-	function self.on_header_field(header)
-		cur_header = header
-	end
-
-	function self.on_header_value(val)
-		headers[cur_header] = val
+	function self.on_header(header, val)
+		headers[header] = val
 	end
 
 	function self.on_headers_complete()
@@ -244,7 +239,11 @@ local function create_response_parser(self)
 	function self.on_body(data)
 		if self.skip_complete then return end
 		-- call request's on_data callback
-		if data ~= nil then
+		if data == nil then
+			local req = self.cur_req
+			call_callback(req, 'on_data', resp, body)
+			body = nil
+		else
 			body = (body or '') .. data
 		end
 	end
@@ -256,10 +255,6 @@ local function create_response_parser(self)
 			return
 		end
 		local req = self.cur_req
-		if body ~= nil then
-			call_callback(req, 'on_data', resp, body)
-			body = nil
-		end
 		-- we are done with this request.
 		self.cur_req = nil
 		-- put connection back into the pool.
