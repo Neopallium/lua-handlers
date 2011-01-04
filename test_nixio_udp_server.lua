@@ -18,7 +18,6 @@
 -- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 -- THE SOFTWARE.
 
-local socket = require'handler.nixio.socket'
 local acceptor = require'handler.nixio.acceptor'
 local ev = require'ev'
 local loop = ev.Loop.default

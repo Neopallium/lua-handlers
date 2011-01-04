@@ -33,7 +33,9 @@ luarocks install lua-handler-http-scm-0.rockspec
 
 ### Install optional sub-package lua-handler-nixio:
 
-luarocks install nixio
+curl -O "https://github.com/Neopallium/nixio/raw/master/nixio-scm-0.rockspec"
+
+luarocks install nixio-scm-0.rockspec
 
 curl -O "https://github.com/Neopallium/lua-handlers/raw/master/lua-handler-nixio-scm-0.rockspec"
 
@@ -66,7 +68,7 @@ Dependencies
 ### Dependencies for optional lua-handler-nixio package:
 
 * [Lua-ev](https://github.com/brimworks/lua-ev)
-* [Nixio](http://dev.luci.freifunk-halle.net/nixio/doc/)
+* [Nixio](https://github.com/Neopallium/nixio)
 
 ### Dependencies for optional lua-handler-zmq package:
 

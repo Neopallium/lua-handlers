@@ -289,10 +289,6 @@ local function sock_new_connect(loop, handler, domain, _type, host, port)
 	return self
 end
 
-local function n_assert(test, errno, msg)
-	return assert(test, msg)
-end
-
 module'handler.nixio.connection'
 
 function tcp(loop, handler, host, port)

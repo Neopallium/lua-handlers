@@ -19,8 +19,9 @@ build	= {
 	type		= 'none',
 	install = {
 		lua = {
-			['handler.nixio.connection']  = "handler/nixio/connection.lua",
 			['handler.nixio.acceptor']  = "handler/nixio/acceptor.lua",
+			['handler.nixio.connection']  = "handler/nixio/connection.lua",
+			['handler.nixio.datagram']  = "handler/nixio/datagram.lua",
 		}
 	}
 }

@@ -18,7 +18,7 @@
 -- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 -- THE SOFTWARE.
 
-local socket = require'handler.nixio.socket'
+local connection = require'handler.nixio.connection'
 local ev = require'ev'
 local loop = ev.Loop.default
 
@@ -41,7 +41,7 @@ udp_client_mt.__index = udp_client_mt
 -- new udp client
 local function new_udp_client(host, port)
 	local this = setmetatable({}, udp_client_mt)
-	this.sck = socket.udp(loop, this, host, port)
+	this.sck = connection.udp(loop, this, host, port)
 	return this
 end
 

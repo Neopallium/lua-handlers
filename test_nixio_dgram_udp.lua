@@ -18,39 +18,33 @@
 -- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 -- THE SOFTWARE.
 
-local acceptor = require'handler.nixio.acceptor'
+local datagram = require'handler.nixio.datagram'
 local ev = require'ev'
 local loop = ev.Loop.default
 
-local tcp_client_mt = {
-handle_error = function(self, err)
-	print('tcp_client.error:', self, err)
+local udp_client_mt = {
+handle_error = function(this, err)
+	if err ~= 'closed' then
+		print('udp_client.error:', err)
+	end
 end,
-handle_connected = function(self)
-	print('tcp_client.connected:', self)
-end,
-handle_data = function(self, data)
-	print('tcp_client.data:', self, data)
+handle_data = function(this, data, ip, port)
+	print('udp_client.data:',data, ip, port)
+	this.sck:sendto('hello\n', ip, port)
 end,
 }
-tcp_client_mt.__index = tcp_client_mt
+udp_client_mt.__index = udp_client_mt
 
--- new tcp client
-local function new_tcp_client(sock)
-	local self = setmetatable({}, tcp_client_mt)
-	sock:sethandler(self)
-	self.sock = sock
-	return self
+-- new udp client
+local function new_udp_client(host, port)
+	local this = setmetatable({}, udp_client_mt)
+	this.sck = datagram.udp(loop, this, host, port)
+	return this
 end
 
--- new tcp server
-local function new_server(port, handler)
-	print('New tcp server listen on: ' .. port)
-	return acceptor.tcp(loop, handler, '*', port, 1024)
-end
-
-local port = arg[1] or 8081
-local server = new_server(port, new_tcp_client)
+local host = arg[1] or "*"
+local port = arg[2] or 8081
+local client = new_udp_client(host, port)
 
 loop:loop()
 
