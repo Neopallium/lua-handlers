@@ -82,7 +82,7 @@ local function udp_receive_data(self)
 			else
 				-- socket error
 				udp_handle_error(self, ip)
-				return false, err
+				return false, ip
 			end
 		end
 		-- pass read data to handler

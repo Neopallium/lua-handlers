@@ -19,6 +19,7 @@
 -- THE SOFTWARE.
 
 local setmetatable = setmetatable
+local tostring = tostring
 local print = print
 local assert = assert
 
@@ -102,10 +103,16 @@ local function acceptor_new_bind_listen(loop, handler, is_dgram, addr, port, bac
 						sock = wrap_connected(loop, nil, sock)
 						udp_clients[c_key] = sock
 						-- pass client socket to new connection handler.
-						client = handler(sock)
+						if handler(sock) == nil then
+							-- connect handler returned nil, maybe they are rejecting connections.
+							break
+						end
+						-- get socket handler object from socket
+						client = sock.handler
 						-- call connected callback, socket is ready for sending data.
 						client:handle_connected()
 					else
+						-- get socket handler object from socket
 						client = sock.handler
 					end
 					-- handle datagram from udp client.
@@ -129,7 +136,12 @@ local function acceptor_new_bind_listen(loop, handler, is_dgram, addr, port, bac
 				if sock then
 					-- wrap lua socket
 					sock = wrap_connected(loop, nil, sock)
-					local client = handler(sock)
+					if handler(sock) == nil then
+						-- connect handler returned nil, maybe they are rejecting connections.
+						break
+					end
+					-- get socket handler object from socket
+					local client = sock.handler
 					-- call connected callback, socket is ready for sending data.
 					client:handle_connected()
 				else

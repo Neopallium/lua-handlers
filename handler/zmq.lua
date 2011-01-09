@@ -22,6 +22,8 @@ local setmetatable = setmetatable
 local print = print
 local tinsert = table.insert
 local tremove = table.remove
+local error = error
+local type = type
 
 local ev = require"ev"
 local zmq = require"zmq"
@@ -373,10 +375,10 @@ local type_info = {
 
 local function zsock_wrap(s, s_type, loop, msg_cb, err_cb)
 	local tinfo = type_info[s_type]
-	handler = { handle_msg = msg_cb, handle_error = err_cb}
+	local handler = { handle_msg = msg_cb, handle_error = err_cb}
 	-- create zmq socket
 	local self = {
-		s_type = x_type,
+		s_type = s_type,
 		socket = s,
 		loop = loop,
 		handler = handler,

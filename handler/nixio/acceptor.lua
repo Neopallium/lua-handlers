@@ -101,10 +101,16 @@ local function sock_new_bind_listen(loop, handler, domain, _type, host, port, ba
 						sock = wrap_connected(loop, nil, sock)
 						udp_clients[c_key] = sock
 						-- pass client socket to new connection handler.
-						client = handler(sock)
+						if handler(sock) == nil then
+							-- connect handler returned nil, maybe they are rejecting connections.
+							break
+						end
+						-- get socket handler object from socket
+						client = sock.handler
 						-- call connected callback, socket is ready for sending data.
 						client:handle_connected()
 					else
+						-- get socket handler object from socket
 						client = sock.handler
 					end
 					-- handle first data block from udp client
@@ -127,7 +133,12 @@ local function sock_new_bind_listen(loop, handler, domain, _type, host, port, ba
 				else
 					-- wrap nixio socket
 					sock = wrap_connected(loop, nil, sock)
-					local client = handler(sock)
+					if handler(sock) == nil then
+						-- connect handler returned nil, maybe they are rejecting connections.
+						break
+					end
+					-- get socket handler object from socket
+					local client = sock.handler
 					-- call connected callback, socket is ready for sending data.
 					client:handle_connected()
 				end

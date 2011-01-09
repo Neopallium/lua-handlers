@@ -279,7 +279,6 @@ module'handler.http.connection'
 function client(loop, pool)
 	assert(not pool.is_https, "HTTPS not supported yet!")
 	local conn = setmetatable({
-		is_client = is_client,
 		is_closed = false,
 		pool = pool,
 		expect_100 = false,

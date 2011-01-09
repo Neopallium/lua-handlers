@@ -42,12 +42,6 @@ local function new_tcp_client(host, port)
 	return this
 end
 
--- new tcp server
-local function new_server(port, handler)
-	print('New tcp server listen on: ' .. port)
-	return acceptor.new(loop, handler, '*', port, 1024)
-end
-
 local host, port = (arg[1] or 'localhost:8081'):match('^([^:]*):(.*)$')
 local client = new_tcp_client(host, port)
 

@@ -23,8 +23,9 @@ local url = require"socket.url"
 local urlencode = url.escape
 local ltn12 = require"ltn12"
 
+local type = type
 local print = print
-local ipairs = ipairs
+local pairs = pairs
 local tostring = tostring
 local time = socket.gettime
 local randomseed = math.randomseed
@@ -244,7 +245,7 @@ end
 module'handler.http.form'
 
 function new(data)
-	self = { }
+	local self = { }
 	if data then
 		self.is_simple = check_form_format(data)
 		self.data = data

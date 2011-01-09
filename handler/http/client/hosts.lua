@@ -86,7 +86,7 @@ function host_mt:queue_request(req)
 	return conn:queue_request(req)
 end
 
-function new_host(cache, client, scheme, address, port)
+local function new_host(cache, client, scheme, address, port)
 	return setmetatable({
 		cache = cache,
 		client = client,
