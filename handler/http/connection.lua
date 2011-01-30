@@ -242,7 +242,6 @@ local function create_response_parser(self)
 		if data == nil then
 			local req = self.cur_req
 			call_callback(req, 'on_data', resp, body)
-			body = nil
 		else
 			body = (body or '') .. data
 		end
@@ -263,7 +262,7 @@ local function create_response_parser(self)
 			pool:put_idle_connection(self)
 		end
 		-- call request's on_finished callback
-		call_callback(req, 'on_finished', resp)
+		call_callback(req, 'on_finished', resp, body)
 		resp = nil
 		headers = nil
 		self.resp = nil

@@ -27,6 +27,8 @@ local hosts = require"handler.http.client.hosts"
 local headers = require"handler.http.headers"
 local headers_new = headers.new
 
+local ev = require"ev"
+
 local client_mt = {}
 client_mt.__index = client_mt
 
@@ -53,5 +55,20 @@ function new(loop, client)
 		client.headers['User-Agent'] or client.user_agent or "Lua-Handler HTTPClient/0.1"
 
 	return setmetatable(client, client_mt)
+end
+
+local default_client = nil
+-- get default http client.
+function default()
+	if not default_client then
+		-- create a http client.
+		default_client = new(ev.Loop.default)
+	end
+	return default_client
+end
+
+-- initialize default http client.
+function init(loop, client)
+	default_client = new(loop, client)
 end
 

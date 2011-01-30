@@ -49,6 +49,10 @@ local function process_request_body(req)
 			req.method = 'POST'
 			req.headers['Content-Type'] = body:get_content_type()
 		end
+		-- get content-type from object
+		if not req.headers['Content-Type'] then
+			req.headers['Content-Type'] = body:get_content_type()
+		end
 		req.headers['Content-Length'] = body:get_content_length()
 		-- mark request body as an object
 		req.body_type = 'object'

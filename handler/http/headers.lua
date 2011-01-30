@@ -18,7 +18,6 @@
 -- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 -- THE SOFTWARE.
 
-local ipairs = ipairs
 local pairs = pairs
 local rawget = rawget
 local rawset = rawset
@@ -83,7 +82,8 @@ local common_headers = {
 }
 -- create header normalize table.
 local normalized = {}
-for _,name in ipairs(common_headers) do
+for i=1,#common_headers do
+	local name = common_headers[i]
 	normalized[name:lower()] = name
 end
 

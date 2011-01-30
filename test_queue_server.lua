@@ -40,7 +40,8 @@ local function handle_msg(sock, msg)
 print('server:', unpack(msg))
 	local addr = {}
 	-- get address parts of message
-	for i,part in ipairs(msg) do
+	for i=1,#msg do
+		local part = msg[i]
 		addr[i] = part
 		if part == '' then break end
 	end
