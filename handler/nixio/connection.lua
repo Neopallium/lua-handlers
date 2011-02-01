@@ -26,7 +26,7 @@ local nixio = require"nixio"
 local new_socket = nixio.socket
 
 -- important errors
-local EINPROGRESS = 115
+local EINPROGRESS = nixio.const.EINPROGRESS
 
 local function sock_setsockopt(self, level, option, value)
 	return self.sock:setsockopt(level, option, value)
