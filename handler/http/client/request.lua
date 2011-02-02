@@ -116,7 +116,7 @@ function new(client, req, body)
 		req.path = req.path or '/'
 	end
 	-- validate request.
-	assert(req.host, "request missing host.")
+	assert(req.host, "request missing host or url.")
 
 	-- check if Host header needs to be set.
 	if not req.headers.Host and req.http_version == "HTTP/1.1" then
