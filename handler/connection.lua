@@ -19,7 +19,6 @@
 -- THE SOFTWARE.
 
 local setmetatable = setmetatable
-local print = print
 
 local socket = require"socket"
 local ev = require"ev"
@@ -55,8 +54,6 @@ local function sock_handle_error(self, err)
 	self.has_error = true -- mark socket as bad.
 	if errFunc then
 		errFunc(handler, err)
-	else
-		print('tcp socket error:', err)
 	end
 	sock_close(self)
 end

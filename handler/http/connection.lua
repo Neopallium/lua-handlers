@@ -18,7 +18,6 @@
 -- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 -- THE SOFTWARE.
 
-local print = print
 local pairs = pairs
 local format = string.format
 local setmetatable = setmetatable
@@ -57,7 +56,7 @@ end
 local function call_callback(obj, cb, ...)
 	local meth_cb = obj[cb]
 	if meth_cb then
-		meth_cb(obj, ...)
+		return meth_cb(obj, ...)
 	end
 end
 
@@ -79,7 +78,6 @@ function client_mt:handle_error(err)
 		if req then
 			call_callback(req, 'on_error', self.resp, err)
 		end
-		print('httpconnection:', err)
 	end
 	-- close connection on all errors.
 	self.is_closed = true
@@ -128,10 +126,7 @@ function client_mt:queue_request(req)
 	-- gen: Request-Headers
 	data = gen_headers(data, req.headers) .. "\r\n"
 	-- send request.
---print('--- start request headers:')
---print(data)
 	self.sock:send(data)
---print('--- end request headers:')
 	-- send request body
 	if not self.expect_100 then
 		self:send_body()
@@ -151,9 +146,11 @@ function client_mt:preprocess_body()
 		return
 	end
 
-	-- set "Expect: 100-continue" header
-	req.headers.Expect = "100-continue"
-	self.expect_100 = true
+	if not req.no_expect_100 then
+		-- set "Expect: 100-continue" header
+		req.headers.Expect = "100-continue"
+		self.expect_100 = true
+	end
 
 	local body_type = req.body_type
 	local src
@@ -233,17 +230,23 @@ local function create_response_parser(self)
 		-- save response status.
 		resp.status_code = status_code
 		-- call request's on_response callback
-		call_callback(self.cur_req, 'on_response', resp)
+		return call_callback(self.cur_req, 'on_response', resp)
 	end
 
 	function self.on_body(data)
 		if self.skip_complete then return end
-		-- call request's on_data callback
-		if data == nil then
-			local req = self.cur_req
-			call_callback(req, 'on_data', resp, body)
+		local req = self.cur_req
+		if req.stream_response then
+			-- call request's on_stream_data callback
+			call_callback(req, 'on_data', resp, data)
 		else
-			body = (body or '') .. data
+			-- call request's on_data callback
+			if data == nil then
+				call_callback(req, 'on_data', resp, body)
+				body = nil
+			else
+				body = (body or '') .. data
+			end
 		end
 	end
 
@@ -262,7 +265,7 @@ local function create_response_parser(self)
 			pool:put_idle_connection(self)
 		end
 		-- call request's on_finished callback
-		call_callback(req, 'on_finished', resp, body)
+		call_callback(req, 'on_finished', resp)
 		resp = nil
 		headers = nil
 		self.resp = nil
