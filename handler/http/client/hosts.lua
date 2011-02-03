@@ -62,14 +62,20 @@ end
 function host_mt:put_idle_connection(conn)
 	if conn.is_closed then return end
 	-- check for queued requests
-	local req = tremove(self.requests, 1) -- pop requests in the order they where queued
-	if req then
-		return conn:queue_request(req)
-	end
+	local req
+	repeat
+		req = tremove(self.requests, 1) -- pop requests in the order they where queued
+		-- skip cancelled requests.
+		if req and not req.is_cancelled then
+			return conn:queue_request(req)
+		end
+	until req == nil
 	tinsert(self.idle, conn)
 end
 
 function host_mt:queue_request(req)
+	-- make sure request is valid.
+	if req.is_cancelled then return end
 	-- remove a connection from the idle list.
 	local conn = tremove(self.idle)
 	-- already have an open connection.

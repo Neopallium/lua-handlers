@@ -79,6 +79,8 @@ function client_mt:handle_error(err)
 			call_callback(req, 'on_error', self.resp, err)
 		end
 	end
+	-- flush http-parser
+	self:handle_data('')
 	-- close connection on all errors.
 	self.is_closed = true
 	-- remove connection from the pool.
@@ -99,7 +101,8 @@ function client_mt:handle_data(data)
 		return
 	elseif #data ~= bytes_parsed then
 		-- failed to parse response.
-		self:handle_error("http-parser: failed to parse all received data.")
+		self:handle_error(format("http-parser: failed to parse all received data=%d, parsed=%d",
+			#data, bytes_parsed))
 	end
 end
 
@@ -119,6 +122,8 @@ function client_mt:queue_request(req)
 	assert(self.cur_req == nil, "TODO: no pipeline support yet!")
 	self.cur_req = req
 	local data
+	-- request needs a reference to the connection, so it can cancel the request early.
+	req.connection = self
 	-- gen: Request-Line
 	data = req.method .. " " .. req.path .. " " .. req.http_version .. "\r\n"
 	-- preprocess request body
@@ -143,6 +148,8 @@ function client_mt:preprocess_body()
 	if not body then
 		-- make sure there is no body_src left-over from previous request.
 		self.body_src = nil
+		-- call request_sent callback.
+		call_callback(req, 'on_request_sent')
 		return
 	end
 
@@ -188,6 +195,8 @@ function client_mt:send_body()
 		if chunk == nil then
 			-- finished sending request body.
 			self.body_src = nil
+			-- call request_sent callback.
+			call_callback(self.cur_req, 'on_request_sent')
 			return
 		end
 		if chunk ~= "" then
@@ -203,6 +212,7 @@ local function create_response_parser(self)
 	local headers
 	local parser
 	local body
+	local need_close = false
 
 	function self.on_message_begin()
 		-- setup response object.
@@ -211,6 +221,7 @@ local function create_response_parser(self)
 		resp.headers = headers
 		self.resp = resp
 		body = nil
+		need_close = false
 	end
 
 	function self.on_header(header, val)
@@ -218,6 +229,11 @@ local function create_response_parser(self)
 	end
 
 	function self.on_headers_complete()
+		-- check if we need to close the connection at the end of the response.
+		local connection = headers['Connection']
+		if connection and connection:lower() == 'close' then
+			need_close = true
+		end
 		local status_code = parser:status_code()
 		-- check for expect_100
 		if self.expect_100 and status_code == 100 then
@@ -257,15 +273,19 @@ local function create_response_parser(self)
 			return
 		end
 		local req = self.cur_req
+		-- disconnect request from connection.
+		req.connection = nil
 		-- we are done with this request.
 		self.cur_req = nil
-		-- put connection back into the pool.
-		local pool = self.pool
-		if pool then
-			pool:put_idle_connection(self)
-		end
 		-- call request's on_finished callback
 		call_callback(req, 'on_finished', resp)
+		-- put connection back into the pool.
+		local pool = self.pool
+		if pool and not need_close then
+			pool:put_idle_connection(self)
+		else
+			self:close()
+		end
 		resp = nil
 		headers = nil
 		self.resp = nil

@@ -31,6 +31,13 @@ local new_headers = http_headers.new
 local request_mt = {}
 request_mt.__index = request_mt
 
+function request_mt:close()
+	self.is_cancelled = true
+	if self.connection then
+		self.connection:close()
+	end
+end
+
 local function process_request_body(req)
 	local body = req.body
 	-- if no request body, then we don't need to do anything.
@@ -81,6 +88,9 @@ function new(client, req, body)
 		-- default port
 		req.port = tonumber(req.port) or 80
 	end
+
+	-- mark request as non-cancelled.
+	req.is_cancelled = false
 
 	-- copy common headers from client.
 	local headers = req.headers
