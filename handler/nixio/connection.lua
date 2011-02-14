@@ -125,6 +125,7 @@ local function sock_send(self, data)
 	if not self.write_blocked then
 		num, err = sock_send_data(self, buf)
 	else
+		self.write_buf = buf
 		-- let the caller know that the socket is blocked and data is being buffered
 		err = 'blocked'
 	end

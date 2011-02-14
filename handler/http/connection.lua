@@ -157,6 +157,8 @@ function client_mt:preprocess_body()
 		-- set "Expect: 100-continue" header
 		req.headers.Expect = "100-continue"
 		self.expect_100 = true
+	else
+		self.expect_100 = false
 	end
 
 	local body_type = req.body_type
