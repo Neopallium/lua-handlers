@@ -22,6 +22,7 @@ local setmetatable = setmetatable
 local print = print
 local tinsert = table.insert
 local tremove = table.remove
+local pairs = pairs
 local error = error
 local type = type
 
@@ -72,9 +73,12 @@ local function zsock_connect(self, ...)
 end
 
 local function zsock_close(self)
+	local send_queue = self.send_queue
 	self.is_closing = true
-	if #self.send_queue == 0 or self.has_error then
-		self.io_recv:stop(self.loop)
+	if not send_queue or #send_queue == 0 or self.has_error then
+		if self.io_recv then
+			self.io_recv:stop(self.loop)
+		end
 		self.io_idle:stop(self.loop)
 		self.socket:close()
 	end
@@ -219,7 +223,7 @@ local function zsock_receive_data(self)
 			msg = nil
 			count = count + 1
 		end
-	until count >= recv_max
+	until count >= recv_max or self.is_closing
 
 	-- save any partial message.
 	self.recv_msg = msg
@@ -424,6 +428,14 @@ local function create(self, s_type, msg_cb, err_cb)
 end
 
 module'handler.zmq'
+
+-- copy constants
+for k,v in pairs(zmq) do
+	-- only copy upper-case string values.
+	if type(k) == 'string' and k == k:upper() then
+		_M[k] = v
+	end
+end
 
 local meta = {}
 meta.__index = meta
