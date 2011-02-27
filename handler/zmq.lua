@@ -255,7 +255,6 @@ local function zsock_dispatch_events(self)
 
 	-- check ZMQ_EVENTS
 	local events = s:getopt(z_EVENTS)
-	--local events = s:events()
 	if events == z_POLLIN_OUT then
 		readable = true
 		writeable = true
