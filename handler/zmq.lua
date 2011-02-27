@@ -41,8 +41,8 @@ local z_POLLIN_OUT = z_POLLIN + z_POLLOUT
 
 local mark_SNDMORE = {}
 
-local default_send_max = 10
-local default_recv_max = 10
+local default_send_max = 50
+local default_recv_max = 50
 
 local function zsock_getopt(self, ...)
 	return self.socket:getopt(...)
@@ -80,7 +80,10 @@ local function zsock_close(self)
 			self.io_recv:stop(self.loop)
 		end
 		self.io_idle:stop(self.loop)
-		self.socket:close()
+		if self.socket then
+			self.socket:close()
+			self.socket = nil
+		end
 	end
 end
 
@@ -91,7 +94,7 @@ local function zsock_handle_error(self, err)
 	if errFunc then
 		errFunc(self, err)
 	else
-		print('zmq socket: error ', err)
+		print('zmq socket: error ' .. err)
 	end
 	zsock_close(self)
 end
@@ -106,7 +109,38 @@ local function zsock_enable_idle(self, enable)
 	end
 end
 
-local function zsock_send_data(self)
+local function zsock_send_data(self, data, more)
+	local s = self.socket
+
+	local flags = z_NOBLOCK
+	-- check for send more marker
+	if more then
+		flags = flags + z_SNDMORE
+	end
+	local sent, err = s:send(data, flags)
+	if not sent then
+		-- got timeout error block writes.
+		if err == 'timeout' then
+			-- block sending, data will queue until we can send again.
+			self.send_blocked = true
+			-- data in queue, mark socket for sending.
+			self.need_send = true
+			-- make sure idle watcher is running.
+			zsock_enable_idle(self, true)
+		else
+			-- report error
+			zsock_handle_error(self, err)
+		end
+		return false
+	end
+	if not more and self.state == "SEND_ONLY" then
+		-- sent whole message, switch to receiving state
+		self.state = "RECV_ONLY"
+	end
+	return true
+end
+
+local function zsock_send_queue(self)
 	local send_max = self.send_max
 	local count = 0
 	local s = self.socket
@@ -114,49 +148,28 @@ local function zsock_send_data(self)
 
 	repeat
 		local data = queue[1]
-		local flags = 0
 		-- check for send more marker
-		if queue[2] == mark_SNDMORE then
-			flags = z_SNDMORE
-		end
-		local sent, err = s:send(data, flags + z_NOBLOCK)
+		local more = (queue[2] == mark_SNDMORE)
+		local sent = zsock_send_data(self, data, more)
 		if not sent then
-			-- got timeout error block writes.
-			if err == 'timeout' then
-				-- block sending, data will queue until we can send again.
-				self.send_blocked = true
-				-- data in queue, mark socket for sending.
-				self.need_send = true
-			else
-				-- report error
-				zsock_handle_error(self, err)
-			end
 			return
-		else
-			-- pop sent data from queue
+		end
+		-- pop sent data from queue
+		tremove(queue, 1)
+		-- pop send more marker
+		if more then
 			tremove(queue, 1)
-			-- pop send more marker
-			if flags == z_SNDMORE then
-				tremove(queue, 1)
-			else
-				count = count + 1
-				-- finished whole message.
-				if self._has_state then
-					-- switch to receiving state.
-					self.state = "RECV_ONLY"
-					self.recv_enabled = true
-					-- make sure idle watcher is running.
-					zsock_enable_idle(self, true)
-				end
-			end
-			-- check if queue is empty
-			if #queue == 0 then
-				-- enable write callback
-				self.need_send = false
-				self.send_blocked = false
-				-- finished queue is empty
-				return
-			end
+		else
+			-- whole message sent
+			count = count + 1
+		end
+		-- check if queue is empty
+		if #queue == 0 then
+			-- un-block socket
+			self.need_send = false
+			self.send_blocked = false
+			-- finished queue is empty
+			return
 		end
 	until count >= send_max
 	-- hit max send and still have more data to send
@@ -204,8 +217,8 @@ local function zsock_receive_data(self)
 		end
 		if more == 0 then
 			-- finished receiving whole message
-			if self._has_state then
-				-- switch to sending state.
+			if self.state == "RECV_ONLY" then
+				-- switch to sending state
 				self.state = "SEND_ONLY"
 			end
 			-- pass read message to handler
@@ -215,8 +228,8 @@ local function zsock_receive_data(self)
 				zsock_handle_error(self, err)
 				return
 			end
-			-- we are finished if the state is stil SEND_ONLY
-			if self._has_state and self.state == "SEND_ONLY" then
+			-- can't receive any more messages when in send_only state
+			if self.state == "SEND_ONLY" then
 				self.recv_enabled = false
 				return
 			end
@@ -242,6 +255,7 @@ local function zsock_dispatch_events(self)
 
 	-- check ZMQ_EVENTS
 	local events = s:getopt(z_EVENTS)
+	--local events = s:events()
 	if events == z_POLLIN_OUT then
 		readable = true
 		writeable = true
@@ -263,57 +277,70 @@ local function zsock_dispatch_events(self)
 	end
 	-- if socket is writeable and the send queue is not empty
 	if writeable and self.need_send then
-		zsock_send_data(self)
+		zsock_send_queue(self)
 	end
 end
 
-local function _queue_msg(queue, msg)
+local function _queue_msg(queue, msg, offset, more)
 	local parts = #msg
 	-- queue first part of message
-	tinsert(queue, msg[1])
-	for i=2,parts do
+	tinsert(queue, msg[offset])
+	for i=offset+1,parts do
 		-- queue more marker flag
 		tinsert(queue, mark_SNDMORE)
 		-- queue part of message
 		tinsert(queue, msg[i])
 	end
+	if more then
+		-- queue more marker flag
+		tinsert(queue, mark_SNDMORE)
+	end
 end
 
 local function zsock_send(self, data, more)
-	local queue = self.send_queue
-	-- check if we are in receiving-only state.
-	if self._has_state and self.state == "RECV_ONLY" then
-		return false, "Can't send when in receiving state."
-	end
 	if type(data) == 'table' then
-		-- queue multipart message
-		_queue_msg(queue, data)
+		local i = 1
+		-- if socket is not blocked
+		if not self.send_blocked then
+			local parts = #data
+			-- try sending message
+			while zsock_send_data(self, data[i], true) do
+				i = i + 1
+				-- we only sent the first (parts-1) parts of the message here.
+				if i < parts then
+					-- try sending last part of message
+					if zsock_send_data(self, data[i], more) then
+						return true, nil
+					end
+					-- failed to send last chunk, it will be queued
+					break
+				end
+			end
+		end
+		-- queue un-sent parts of message
+		_queue_msg(self.queue, data, i, more)
 	else
+		-- if socket is not blocked
+		if not self.send_blocked then
+			if zsock_send_data(self, data, more) then
+				-- data sent we are finished
+				return true, nil
+			end
+		end
+		-- queue un-sent data
+		local queue = self.send_queue
 		-- queue simple data.
 		tinsert(queue, data)
-	end
-	-- check if there is more data to send
-	if more then
-		-- queue a marker flag
-		tinsert(queue, mark_SNDMORE)
-	end
-	-- try sending data now.
-	if not self.send_blocked then
-		zsock_send_data(self)
+		-- check if there is more data to send
+		if more then
+			-- queue a marker flag
+			tinsert(queue, mark_SNDMORE)
+		end
 	end
 	return true, nil
 end
 
-local function zsock_handle_idle(self)
-	-- dispatch events.
-	zsock_dispatch_events(self)
-	if not self.need_send and not self.recv_enabled then
-		zsock_enable_idle(self, false)
-	end
-end
-
 local zsock_mt = {
-_has_state = false,
 send = zsock_send,
 setopt = zsock_setopt,
 getopt = zsock_getopt,
@@ -325,7 +352,6 @@ close = zsock_close,
 zsock_mt.__index = zsock_mt
 
 local zsock_no_send_mt = {
-_has_state = false,
 setopt = zsock_setopt,
 getopt = zsock_getopt,
 identity = zsock_identity,
@@ -336,7 +362,6 @@ close = zsock_close,
 zsock_no_send_mt.__index = zsock_no_send_mt
 
 local zsock_sub_mt = {
-_has_state = false,
 setopt = zsock_setopt,
 getopt = zsock_getopt,
 sub = zsock_sub,
@@ -348,33 +373,21 @@ close = zsock_close,
 }
 zsock_sub_mt.__index = zsock_sub_mt
 
-local zsock_state_mt = {
-_has_state = true,
-send = zsock_send,
-setopt = zsock_setopt,
-getopt = zsock_getopt,
-identity = zsock_identity,
-bind = zsock_bind,
-connect = zsock_connect,
-close = zsock_close,
-}
-zsock_state_mt.__index = zsock_state_mt
-
 local type_info = {
 	-- publish/subscribe sockets
-	[zmq.PUB]  = { mt = zsock_mt, enable_recv = false, recv = false, send = true },
-	[zmq.SUB]  = { mt = zsock_sub_mt, enable_recv = true,  recv = true, send = false },
+	[zmq.PUB]  = { mt = zsock_mt, recv = false, send = true },
+	[zmq.SUB]  = { mt = zsock_sub_mt, recv = true, send = false },
 	-- push/pull sockets
-	[zmq.PUSH] = { mt = zsock_mt, enable_recv = false, recv = false, send = true },
-	[zmq.PULL] = { mt = zsock_no_send_mt, enable_recv = true,  recv = true, send = false },
+	[zmq.PUSH] = { mt = zsock_mt, recv = false, send = true },
+	[zmq.PULL] = { mt = zsock_no_send_mt, recv = true, send = false },
 	-- two-way pair socket
-	[zmq.PAIR] = { mt = zsock_mt, enable_recv = true,  recv = true, send = true },
+	[zmq.PAIR] = { mt = zsock_mt, recv = true, send = true },
 	-- request/response sockets
-	[zmq.REQ]  = { mt = zsock_state_mt, enable_recv = false, recv = true, send = true },
-	[zmq.REP]  = { mt = zsock_state_mt, enable_recv = true,  recv = true, send = true },
+	[zmq.REQ]  = { mt = zsock_mt, recv = true, send = true, state = "SEND_ONLY" },
+	[zmq.REP]  = { mt = zsock_mt, recv = true, send = true, state = "RECV_ONLY" },
 	-- extended request/response sockets
-	[zmq.XREQ] = { mt = zsock_mt, enable_recv = true, recv = true, send = true },
-	[zmq.XREP] = { mt = zsock_mt, enable_recv = true,  recv = true, send = true },
+	[zmq.XREQ] = { mt = zsock_mt, recv = true, send = true },
+	[zmq.XREP] = { mt = zsock_mt, recv = true, send = true },
 }
 
 local function zsock_wrap(s, s_type, loop, msg_cb, err_cb)
@@ -390,6 +403,7 @@ local function zsock_wrap(s, s_type, loop, msg_cb, err_cb)
 		recv_enabled = false,
 		idle_enabled = false,
 		is_closing = false,
+		state = tinfo.state, -- copy initial socket state.
 	}
 	setmetatable(self, tinfo.mt)
 
@@ -410,10 +424,17 @@ local function zsock_wrap(s, s_type, loop, msg_cb, err_cb)
 		self.io_recv:start(loop)
 	end
 	local idle_cb = function()
-		zsock_handle_idle(self)
+		-- dispatch events.
+		zsock_dispatch_events(self)
+		--[[
+		if not self.need_send and not self.recv_enabled then
+			zsock_enable_idle(self, false)
+		end
+		--]]
 	end
 	-- this Idle watcher is used to convert ZeroMQ FD's edge-triggered fashion to level-triggered
 	self.io_idle = ev.Idle.new(idle_cb)
+	zsock_enable_idle(self, true)
 
 	return self
 end
@@ -427,7 +448,7 @@ local function create(self, s_type, msg_cb, err_cb)
 	return zsock_wrap(s, s_type, self.loop, msg_cb, err_cb)
 end
 
-module'handler.zmq'
+module(...)
 
 -- copy constants
 for k,v in pairs(zmq) do
