@@ -298,7 +298,7 @@ local function create_response_parser(self)
 	self.parser = parser
 end
 
-module'handler.http.connection'
+module(...)
 
 function client(loop, pool)
 	assert(not pool.is_https, "HTTPS not supported yet!")

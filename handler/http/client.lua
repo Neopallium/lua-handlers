@@ -41,7 +41,7 @@ function client_mt:request(req)
 	return req
 end
 
-module'handler.http.client'
+module(...)
 
 function new(loop, client)
 	client = client or {}

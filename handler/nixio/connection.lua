@@ -290,7 +290,7 @@ local function sock_new_connect(loop, handler, domain, _type, host, port)
 	return self
 end
 
-module'handler.nixio.connection'
+module(...)
 
 function tcp(loop, handler, host, port)
 	return sock_new_connect(loop, handler, 'inet', 'stream', host, port)

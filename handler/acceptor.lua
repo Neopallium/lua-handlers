@@ -163,7 +163,7 @@ local function acceptor_new_bind_listen(loop, handler, is_dgram, addr, port, bac
 	return self
 end
 
-module'handler.acceptor'
+module(...)
 
 function tcp(loop, handler, addr, port, backlog)
 	return acceptor_new_bind_listen(loop, handler, false, addr, port, backlog)

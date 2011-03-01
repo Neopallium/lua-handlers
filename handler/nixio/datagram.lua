@@ -158,7 +158,7 @@ local function dgram_new_bind(loop, handler, domain, host, port)
 	return self
 end
 
-module'handler.nixio.datagram'
+module(...)
 
 function udp(loop, handler, host, port)
 	return dgram_new_bind(loop, handler, 'inet', host, port)

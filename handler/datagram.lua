@@ -135,7 +135,7 @@ local function udp_wrap(loop, handler, sck)
 	return self
 end
 
-module'handler.datagram'
+module(...)
 
 function new(loop, handler, host, port)
 	-- connect to server.

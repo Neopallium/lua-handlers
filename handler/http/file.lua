@@ -48,7 +48,7 @@ function file_mt:get_content()
 	return tconcat(data)
 end
 
-module'handler.http.file'
+module(...)
 
 function new(filename, content_type, upload_name)
 	local file = assert(io.open(filename))

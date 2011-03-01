@@ -259,7 +259,7 @@ local function sock_wrap(loop, handler, sck, is_connected)
 	return self
 end
 
-module'handler.connection'
+module(...)
 
 function tcp(loop, handler, host, port)
 	local sck = socket.tcp()

@@ -107,7 +107,7 @@ headers_mt.__newindex = function(headers, name, value)
 	rawset(headers, norm, value)
 end
 
-module'handler.http.headers'
+module(...)
 
 function new(headers)
 	-- check if 'headers' has the same metatable already.

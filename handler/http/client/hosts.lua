@@ -137,7 +137,7 @@ function hosts_cache_mt:queue_request(req)
 	return host:queue_request(req)
 end
 
-module'handler.http.client.hosts'
+module(...)
 
 function new(client)
 	return setmetatable({

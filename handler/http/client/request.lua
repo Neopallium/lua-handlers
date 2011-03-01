@@ -78,7 +78,7 @@ local function process_request_body(req)
 
 end
 
-module'handler.http.client.request'
+module(...)
 
 function new(client, req, body)
 	if type(req) == 'string' then

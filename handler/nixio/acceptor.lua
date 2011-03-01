@@ -164,7 +164,7 @@ local function sock_new_bind_listen(loop, handler, domain, _type, host, port, ba
 	return self
 end
 
-module'handler.nixio.acceptor'
+module(...)
 
 function tcp(loop, handler, host, port, backlog)
 	return sock_new_bind_listen(loop, handler, 'inet', 'stream', host, port, backlog)

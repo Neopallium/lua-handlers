@@ -242,7 +242,7 @@ function form_mt:get_content()
 	return tconcat(data)
 end
 
-module'handler.http.form'
+module(...)
 
 function new(data)
 	local self = { }
