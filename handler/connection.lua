@@ -19,24 +19,33 @@
 -- THE SOFTWARE.
 
 local setmetatable = setmetatable
+local print = print
 
-local socket = require"socket"
 local ev = require"ev"
+local nixio = require"nixio"
+local new_socket = nixio.socket
 
-local function sock_getstats(self)
-	return self.socket:getstats()
+-- important errors
+local EINPROGRESS = nixio.const.EINPROGRESS
+
+local function sock_setsockopt(self, level, option, value)
+	return self.sock:setsockopt(level, option, value)
 end
 
-local function sock_setstats(self, ...)
-	return self.socket:setstats(...)
+local function sock_getsockopt(self, level, option)
+	return self.sock:getsockopt(level, option)
+end
+
+local function sock_getpeername(self)
+	return self.sock:getpeername()
 end
 
 local function sock_getsockname(self)
-	return self.socket:getsockname()
+	return self.sock:getsockname()
 end
 
-local function sock_setoption(self, ...)
-	return self.socket:setoption(...)
+local function sock_shutdown(self, how)
+	return self.sock:shutdown(how)
 end
 
 local function sock_close(self)
@@ -44,7 +53,7 @@ local function sock_close(self)
 	if not self.write_buf or self.has_error then
 		self.io_write:stop(self.loop)
 		self.io_read:stop(self.loop)
-		self.socket:close()
+		self.sock:close()
 	end
 end
 
@@ -54,17 +63,28 @@ local function sock_handle_error(self, err)
 	self.has_error = true -- mark socket as bad.
 	if errFunc then
 		errFunc(handler, err)
+	else
+		print('socket error:', err)
 	end
 	sock_close(self)
 end
 
 local function sock_send_data(self, buf)
-	local sock = self.socket
+	local sock = self.sock
 	local is_blocked = false
 
-	local num, err, part = sock:send(buf)
-	num = num or part
-	if num then
+	local num, errno, err = sock:send(buf)
+	if not num then
+		-- got timeout error block writes.
+		if num == false then
+			-- got EAGAIN
+			is_blocked = true
+		else -- data == nil
+			-- report error
+			sock_handle_error(self, err)
+			return nil, err
+		end
+	else
 		-- trim sent data.
 		if num < #buf then
 			-- remove sent bytes from buffer.
@@ -78,15 +98,6 @@ local function sock_send_data(self, buf)
 				sock_close(self)
 				return num, 'closed'
 			end
-		end
-	else
-		-- got timeout error block writes.
-		if err == 'timeout' then
-			is_blocked = true
-		else
-			-- report error
-			sock_handle_error(self, err)
-			return nil, err
 		end
 	end
 	-- block/un-block write events.
@@ -132,21 +143,18 @@ local function sock_handle_connected(self)
 	end
 end
 
-local function sock_receive_data(self)
+local function sock_recv_data(self)
 	local read_len = self.read_len
 	local read_max = self.read_max
 	local handler = self.handler
-	local sock = self.socket
+	local sock = self.sock
 	local len = 0
 	local is_connecting = self.is_connecting
 
 	repeat
-		local data, err, part = sock:receive(read_len)
-		if part and #part > 0 then
-			-- only got partial data.
-			data = part
-		elseif not data then
-			if err == 'timeout' then
+		local data, errno, err = sock:recv(read_len)
+		if not data then
+			if data == false then
 				-- check if we where in the connecting state.
 				if is_connecting then
 					is_connecting = false
@@ -154,11 +162,17 @@ local function sock_receive_data(self)
 				end
 				-- no data
 				return true
-			else
+			else -- data == nil
 				-- report error
 				sock_handle_error(self, err)
 				return false, err
 			end
+		end
+		-- check if the other side shutdown there send stream
+		if #data == 0 then
+			-- report socket closed
+			sock_handle_error(self, 'closed')
+			return false, 'closed'
 		end
 		-- check if we where in the connecting state.
 		if is_connecting then
@@ -188,22 +202,23 @@ end
 
 local sock_mt = {
 send = sock_send,
-getstats = sock_getstats,
-setstats = sock_setstats,
+getsockopt = sock_getsockopt,
+setsockopt = sock_setsockopt,
 getsockname = sock_getsockname,
-setoption = sock_setoption,
+getpeername = sock_getpeername,
+shutdown = sock_shutdown,
 close = sock_close,
 sethandler = sock_sethandler,
 is_closed = sock_is_closed,
 }
 sock_mt.__index = sock_mt
 
-local function sock_wrap(loop, handler, sck, is_connected)
-	-- create tcp socket object
+local function sock_wrap(loop, handler, sock, is_connected)
+	-- create socket object
 	local self = {
 		loop = loop,
 		handler = handler,
-		socket = sck,
+		sock = sock,
 		is_connecting = true,
 		write_blocked = false,
 		read_len = 8192,
@@ -212,8 +227,10 @@ local function sock_wrap(loop, handler, sck, is_connected)
 	}
 	setmetatable(self, sock_mt)
 
-	sck:settimeout(0)
-	local fd = sck:getfd()
+	-- make nixio socket non-blocking
+	sock:setblocking(false)
+	-- get socket FD
+	local fd = sock:fileno()
 	-- create callback closure
 	local write_cb = function()
 		local num, err = sock_send_data(self, self.write_buf)
@@ -232,10 +249,10 @@ local function sock_wrap(loop, handler, sck, is_connected)
 		end
 	end
 	local read_cb = function()
-		sock_receive_data(self)
+		sock_recv_data(self)
 	end
 
-	-- create IO watcher.
+	-- create IO watchers.
 	if is_connected then
 		self.io_write = ev.IO.new(write_cb, fd, ev.WRITE)
 		self.is_connecting = false
@@ -247,50 +264,56 @@ local function sock_wrap(loop, handler, sck, is_connected)
 			-- change callback to write_cb
 			io:callback(write_cb)
 			-- check for connect errors by tring to read from the socket.
-			sock_receive_data(self)
+			sock_recv_data(self)
 		end
 		self.io_write = ev.IO.new(connected_cb, fd, ev.WRITE)
 		self.io_write:start(loop)
 	end
 	self.io_read = ev.IO.new(read_cb, fd, ev.READ)
-
 	self.io_read:start(loop)
 
+	return self
+end
+
+local function sock_new_connect(loop, handler, domain, _type, host, port)
+	-- create nixio socket
+	local sock = new_socket(domain, _type)
+	-- wrap socket
+	local self = sock_wrap(loop, handler, sock)
+	-- connect to host:port
+	local ret, errno, err = sock:connect(host, port)
+	if not ret and errno ~= EINPROGRESS then
+		-- report error
+		sock_handle_error(self, err)
+		return nil, err
+	end
 	return self
 end
 
 module(...)
 
 function tcp(loop, handler, host, port)
-	local sck = socket.tcp()
-	-- wrap socket.
-	local self = sock_wrap(loop, handler, sck)
-	-- connect socket to host:port
-	local ret, err = sck:connect(host, port)
-	if err and err ~= 'timeout' then
-		-- report error
-		sock_handle_error(self, err)
-		return nil, err
-	end
-	return self
+	return sock_new_connect(loop, handler, 'inet', 'stream', host, port)
+end
+
+function tcp6(loop, handler, host, port)
+	return sock_new_connect(loop, handler, 'inet6', 'stream', host, port)
 end
 
 function udp(loop, handler, host, port)
-	local sck = socket.udp()
-	-- wrap socket.
-	local self = sock_wrap(loop, handler, sck, false)
-	-- connect socket to host:port
-	local ret, err = sck:setpeername(host, port)
-	if err and err ~= 'timeout' then
-		-- report error
-		sock_handle_error(self, err)
-		return nil, err
-	end
-	return self
+	return sock_new_connect(loop, handler, 'inet', 'dgram', host, port)
+end
+
+function udp6(loop, handler, host, port)
+	return sock_new_connect(loop, handler, 'inet6', 'dgram', host, port)
+end
+
+function unix(loop, handler, path)
+	return sock_new_connect(loop, handler, 'unix', 'stream', path)
 end
 
 function wrap_connected(loop, handler, sock)
-	-- wrap socket.
+	-- wrap socket
 	return sock_wrap(loop, handler, sock, true)
 end
 

@@ -19,14 +19,19 @@
 -- THE SOFTWARE.
 
 local setmetatable = setmetatable
-local tostring = tostring
 local print = print
 local assert = assert
+local tostring = tostring
 
-local socket = require"socket"
 local ev = require"ev"
-local connection = require"handler.connection"
+local nixio = require"nixio"
+local new_socket = nixio.socket
+local connection = require"handler.nixio.connection"
 local wrap_connected = connection.wrap_connected
+
+local function n_assert(test, errno, msg)
+	return assert(test, msg)
+end
 
 local acceptor_mt = {
 set_accept_max = function(self, max)
@@ -39,30 +44,19 @@ end,
 }
 acceptor_mt.__index = acceptor_mt
 
-local function acceptor_new_bind_listen(loop, handler, is_dgram, addr, port, backlog)
-	local server
-
-	-- setup server socket.
-	if is_dgram then
-		server = socket.udp()
-	else
-		server = socket.tcp()
-	end
-	assert(server:setoption('reuseaddr', true), 'server:setoption failed')
-	-- bind server
-	if is_dgram then
-		assert(server:setsockname(addr, port))
-	else
-		assert(server:bind(addr, port))
-		assert(server:listen(backlog or 256))
-	end
+local function sock_new_bind_listen(loop, handler, domain, _type, host, port, backlog)
+	local is_dgram = (_type == 'dgram')
+	-- nixio uses nil to mean any local address.
+	if host == '*' then host = nil end
+	-- create nixio socket
+	local server = new_socket(domain, _type)
 
 	-- create acceptor
 	local self = {
 		loop = loop,
 		handler = handler,
 		server = server,
-		addr = addr,
+		host = host,
 		port = port,
 		-- max sockets to try to accept on one event
 		accept_max = 100,
@@ -70,36 +64,40 @@ local function acceptor_new_bind_listen(loop, handler, is_dgram, addr, port, bac
 	}
 	setmetatable(self, acceptor_mt)
 
-	-- set socket to non-blocking mode.
-	server:settimeout(0)
-
+	-- make nixio socket non-blocking
+	server:setblocking(false)
 	-- create callback closure
 	local accept_cb
 	if is_dgram then
-		local udp_clients = setmetatable({}, {__mode="v"})
+		local udp_clients = setmetatable({},{__mode="v"})
 		accept_cb = function()
 			local max = self.accept_max
 			local count = 0
 			repeat
-				local data, c_ip, c_port = server:receivefrom(8192)
-				if data then
+				local data, c_ip, c_port = server:recvfrom(8192)
+				if not data then
+					if data ~= false then
+						print('dgram_accept.error:', c_ip, c_port)
+					end
+					break
+				else
 					local client
 					local c_key = c_ip .. tostring(c_port)
 					-- look for existing client socket.
 					local sock = udp_clients[c_key]
-					-- check if socket is still valid
+					-- check if socket is still valid.
 					if sock and sock:is_closed() then
 						sock = nil
 					end
 					-- if no cached socket, make a new one.
 					if not sock then
-						sock = socket.udp()
-						assert(sock:setoption('reuseaddr', true), 'server:setoption failed')
-						-- bind client socket to same addr:port as server socket.
-						assert(sock:setsockname(addr, port))
-						-- connect socket to client's ip:port
-						assert(sock:setpeername(c_ip, c_port))
-						-- wrap lua socket.
+						-- make a duplicate server socket
+						sock = new_socket(domain, _type)
+						n_assert(sock:setsockopt('socket', 'reuseaddr', 1))
+						n_assert(sock:bind(host, port))
+						-- connect dupped socket to client's ip:port
+						n_assert(sock:connect(c_ip, c_port))
+						-- wrap nixio socket
 						sock = wrap_connected(loop, nil, sock)
 						udp_clients[c_key] = sock
 						-- pass client socket to new connection handler.
@@ -115,14 +113,8 @@ local function acceptor_new_bind_listen(loop, handler, is_dgram, addr, port, bac
 						-- get socket handler object from socket
 						client = sock.handler
 					end
-					-- handle datagram from udp client.
+					-- handle first data block from udp client
 					client:handle_data(data)
-				else
-					local err = c_ip
-					if err ~= 'timeout' then
-						print('dgram_accept.error:', err)
-					end
-					break
 				end
 				count = count + 1
 			until count >= max
@@ -132,9 +124,14 @@ local function acceptor_new_bind_listen(loop, handler, is_dgram, addr, port, bac
 			local max = self.accept_max
 			local count = 0
 			repeat
-				local sock, err = server:accept()
-				if sock then
-					-- wrap lua socket
+				local sock, errno, err = server:accept()
+				if not sock then
+					if sock ~= false then
+						print('stream_accept.error:', errno, err)
+					end
+					break
+				else
+					-- wrap nixio socket
 					sock = wrap_connected(loop, nil, sock)
 					if handler(sock) == nil then
 						-- connect handler returned nil, maybe they are rejecting connections.
@@ -144,32 +141,48 @@ local function acceptor_new_bind_listen(loop, handler, is_dgram, addr, port, bac
 					local client = sock.handler
 					-- call connected callback, socket is ready for sending data.
 					client:handle_connected()
-				else
-					if err ~= 'timeout' then
-						print('stream_accept.error:', err)
-					end
-					break
 				end
 				count = count + 1
 			until count >= max
 		end
 	end
 	-- create IO watcher.
-	local fd = server:getfd()
+	local fd = server:fileno()
 	self.io = ev.IO.new(accept_cb, fd, ev.READ)
 
 	self.io:start(loop)
+
+	-- allow the address to be re-used.
+	n_assert(server:setsockopt('socket', 'reuseaddr', 1))
+	-- bind socket to local host:port
+	n_assert(server:bind(host, port))
+	if not is_dgram then
+		-- set the socket to listening mode
+		n_assert(server:listen(backlog or 256))
+	end
 
 	return self
 end
 
 module(...)
 
-function tcp(loop, handler, addr, port, backlog)
-	return acceptor_new_bind_listen(loop, handler, false, addr, port, backlog)
+function tcp(loop, handler, host, port, backlog)
+	return sock_new_bind_listen(loop, handler, 'inet', 'stream', host, port, backlog)
 end
 
-function udp(loop, handler, addr, port, backlog)
-	return acceptor_new_bind_listen(loop, handler, true, addr, port, backlog)
+function tcp6(loop, handler, host, port, backlog)
+	return sock_new_bind_listen(loop, handler, 'inet6', 'stream', host, port, backlog)
+end
+
+function udp(loop, handler, host, port, backlog)
+	return sock_new_bind_listen(loop, handler, 'inet', 'dgram', host, port, backlog)
+end
+
+function udp6(loop, handler, host, port, backlog)
+	return sock_new_bind_listen(loop, handler, 'inet6', 'dgram', host, port, backlog)
+end
+
+function unix(loop, handler, path, backlog)
+	return sock_new_bind_listen(loop, handler, 'unix', 'stream', path, nil, backlog)
 end
 

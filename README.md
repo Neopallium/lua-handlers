@@ -11,23 +11,15 @@ Installing
 
 	luarocks install "https://github.com/brimworks/lua-ev/raw/master/rockspec/lua-ev-scm-1.rockspec"
 
-	luarocks install luasocket
+	luarocks install "https://github.com/Neopallium/nixio/raw/master/nixio-scm-0.rockspec"
 
 	luarocks install "https://github.com/Neopallium/lua-handlers/raw/master/lua-handler-scm-0.rockspec"
-
 
 ### Install optional sub-package lua-handler-http:
 
 	luarocks install "https://github.com/brimworks/lua-http-parser/raw/master/lua-http-parser-scm-0.rockspec"
 
 	luarocks install "https://github.com/Neopallium/lua-handlers/raw/master/lua-handler-http-scm-0.rockspec"
-
-
-### Install optional sub-package lua-handler-nixio:
-
-	luarocks install "https://github.com/Neopallium/nixio/raw/master/nixio-scm-0.rockspec"
-
-	luarocks install "https://github.com/Neopallium/lua-handlers/raw/master/lua-handler-nixio-scm-0.rockspec"
 
 
 ### Install optional sub-package lua-handler-zmq:
@@ -42,17 +34,12 @@ Dependencies
 ### Base lua-handler package required dependcies:
 
 * [Lua-ev](https://github.com/brimworks/lua-ev)
-* [LuaSocket](http://w3.impa.br/~diego/software/luasocket/)
+* [Nixio](https://github.com/Neopallium/nixio)
 
 ### Dependencies for optional lua-handler-http package:
 
 * [Lua-ev](https://github.com/brimworks/lua-ev)
 * [Lua-http-parser](https://github.com/brimworks/lua-http-parser)
-
-### Dependencies for optional lua-handler-nixio package:
-
-* [Lua-ev](https://github.com/brimworks/lua-ev)
-* [Nixio](https://github.com/Neopallium/nixio)
 
 ### Dependencies for optional lua-handler-zmq package:
 

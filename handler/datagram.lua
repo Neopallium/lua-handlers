@@ -22,35 +22,40 @@ local setmetatable = setmetatable
 local print = print
 local assert = assert
 
-local socket = require"socket"
 local ev = require"ev"
+local nixio = require"nixio"
+local new_socket = nixio.socket
 
-local function udp_setsockname(self, ...)
-	return self.socket:setsockname(...)
+local function dgram_setsockopt(self, level, option, value)
+	return self.sock:setsockopt(level, option, value)
 end
 
-local function udp_getsockname(self)
-	return self.socket:getsockname()
+local function dgram_getsockopt(self, level, option)
+	return self.sock:getsockopt(level, option)
 end
 
-local function udp_setpeername(self, ...)
-	return self.peeret:setpeername(...)
+local function dgram_setsockname(self, addr, port)
+	return self.sock:setsockname(addr, port)
 end
 
-local function udp_getpeername(self)
-	return self.peeret:getpeername()
+local function dgram_getsockname(self)
+	return self.sock:getsockname()
 end
 
-local function udp_setoption(self, ...)
-	return self.socket:setoption(...)
+local function dgram_setpeername(self, addr, port)
+	return self.sock:setpeername(addr, port)
 end
 
-local function udp_close(self)
+local function dgram_getpeername(self)
+	return self.sock:getpeername()
+end
+
+local function dgram_close(self)
 	self.io_read:stop(self.loop)
-	self.socket:close()
+	self.sock:close()
 end
 
-local function udp_handle_error(self, err)
+local function dgram_handle_error(self, err)
 	local handler = self.handler
 	local errFunc = handler.handle_error
 	self.has_error = true -- mark socket as bad.
@@ -59,37 +64,45 @@ local function udp_handle_error(self, err)
 	else
 		print('udp socket error:', err)
 	end
-	udp_close(self)
+	dgram_close(self)
 end
 
-local function udp_sendto(self, data, ip, port)
-	return self.socket:sendto(data, ip, port)
+local function dgram_sendto(self, data, ip, port)
+	return self.sock:sendto(data, ip, port)
 end
 
-local function udp_receive_data(self)
+local function dgram_recvfrom_data(self)
 	local max_packet = self.max_packet
 	local read_max = self.read_max
 	local handler = self.handler
-	local sock = self.socket
+	local sock = self.sock
 	local len = 0
+	local err
 
 	repeat
-		local data, ip, port = sock:receivefrom(max_packet)
-		if data == nil then
-			if ip == 'timeout' then
+		local data, ip, port = sock:recvfrom(max_packet)
+		if not data then
+			if data == false then
 				-- no data
 				return true
 			else
-				-- socket error
-				udp_handle_error(self, ip)
-				return false, ip
+				err = port
+				-- report error
+				dgram_handle_error(self, err)
+				return false, err
 			end
 		end
+		-- check if the other side shutdown there send stream
+		if #data == 0 then
+			-- report socket closed
+			dgram_handle_error(self, 'closed')
+			return false, 'closed'
+		end
 		-- pass read data to handler
-		local err = handler:handle_data(data, ip, port)
+		err = handler:handle_data(data, ip, port)
 		if err then
 			-- report error
-			udp_handle_error(self, err)
+			dgram_handle_error(self, err)
 			return false, err
 		end
 		len = len + #data
@@ -98,34 +111,37 @@ local function udp_receive_data(self)
 	return true
 end
 
-local udp_mt = {
-sendto = udp_sendto,
-getsockname = udp_getsockname,
-setsockname = udp_setsockname,
-getpeername = udp_getpeername,
-setpeername = udp_setpeername,
-setoption = udp_setoption,
-close = udp_close,
+local dgram_mt = {
+sendto = dgram_sendto,
+getsockopt = dgram_getsockopt,
+setsockopt = dgram_setsockopt,
+getsockname = dgram_getsockname,
+setsockname = dgram_setsockname,
+getpeername = dgram_getpeername,
+setpeername = dgram_setpeername,
+close = dgram_close,
 }
-udp_mt.__index = udp_mt
+dgram_mt.__index = dgram_mt
 
-local function udp_wrap(loop, handler, sck)
+local function dgram_wrap(loop, handler, sock)
 	-- create udp socket object
 	local self = {
 		loop = loop,
 		handler = handler,
-		socket = sck,
+		sock = sock,
 		max_packet = 8192,
 		read_max = 65536,
 	}
-	setmetatable(self, udp_mt)
+	setmetatable(self, dgram_mt)
 
-	sck:settimeout(0)
-	local fd = sck:getfd()
+	-- make nixio socket non-blocking
+	sock:setblocking(false)
+	-- get socket FD
+	local fd = sock:fileno()
 
 	-- create callback closure
 	local read_cb = function()
-		udp_receive_data(self)
+		dgram_recvfrom_data(self)
 	end
 	-- create IO watcher.
 	self.io_read = ev.IO.new(read_cb, fd, ev.READ)
@@ -135,15 +151,37 @@ local function udp_wrap(loop, handler, sck)
 	return self
 end
 
-module(...)
-
-function new(loop, handler, host, port)
-	-- connect to server.
-	local sck = socket.udp()
-	assert(sck:setsockname(host, port))
-	return udp_wrap(loop, handler, sck)
+local function dgram_new_bind(loop, handler, domain, host, port)
+	-- nixio uses nil to mena any local address
+	if host == '*' then host = nil end
+	-- create nixio socket
+	local sock = new_socket(domain, 'dgram')
+	-- wrap socket
+	local self = dgram_wrap(loop, handler, sock)
+	-- connect to host:port
+	local ret, errno, err = sock:bind(host, port)
+	if not ret then
+		-- report error
+		dgram_handle_error(self, err)
+		return nil, err
+	end
+	return self
 end
 
--- export
-wrap = udp_wrap
+module(...)
+
+function udp(loop, handler, host, port)
+	return dgram_new_bind(loop, handler, 'inet', host, port)
+end
+
+-- default datagram type to udp.
+new = udp
+
+function udp6(loop, handler, host, port)
+	return dgram_new_bind(loop, handler, 'inet6', host, port)
+end
+
+function unix(loop, handler, path)
+	return dgram_new_bind(loop, handler, 'unix', path)
+end
 

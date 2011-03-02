@@ -6,13 +6,13 @@ source	= {
 	url	= 'git://github.com/Neopallium/lua-handlers.git'
 }
 description	= {
-	summary	= "Socket handler class that wrap lua-ev/luasocket.",
+	summary	= "Socket handler class that wrap lua-ev/nixio.",
 	detailed	= '',
 	homepage	= 'https://github.com/Neopallium/lua-handlers',
 	license	= 'MIT',
 }
 dependencies = {
-	'luasocket',
+	'nixio',
 	'lua-ev',
 }
 build	= {

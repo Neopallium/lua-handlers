@@ -6,7 +6,7 @@ source	= {
 	url	= 'git://github.com/Neopallium/lua-handlers.git'
 }
 description	= {
-	summary	= "nixio socket handler class.",
+	summary	= "Depercated module.  Nixio is now the main socket backend.",
 	detailed	= '',
 	homepage	= 'https://github.com/Neopallium/lua-handlers',
 	license	= 'MIT',
