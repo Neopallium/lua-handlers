@@ -300,7 +300,7 @@ end
 
 module(...)
 
-function client(loop, pool)
+function new(loop, pool)
 	assert(not pool.is_https, "HTTPS not supported yet!")
 	local conn = setmetatable({
 		is_closed = false,
@@ -318,7 +318,5 @@ function client(loop, pool)
 	return conn
 end
 
-function server(loop, sock, is_https)
-	assert(false, "HTTP server-side connections not supported yet!")
-end
+setmetatable(_M, { __call = function(tab, ...) return new(...) end })
 
