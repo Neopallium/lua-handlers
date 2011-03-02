@@ -56,7 +56,7 @@ local function next_url()
 	if not url then return false end
 	print('---- start request of url: ' .. url)
 	-- start next request.
-	client:request{
+	local req, err = client:request{
 		url = url,
 		on_response = on_response,
 		on_data = on_data,
@@ -70,6 +70,10 @@ local function next_url()
 			end
 		end,
 	}
+	if err then
+		print('****** Error starting request: ' .. err)
+		return next_url()
+	end
 	return true
 end
 

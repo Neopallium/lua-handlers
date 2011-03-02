@@ -108,6 +108,9 @@ function new(client, req, body)
 		-- parse url
 		local scheme, authority, path =
 			url:match('^([^:/?#]+)://([^/?#]*)(.*)$')
+		if scheme == nil or authority == nil then
+			return nil, "Invalid request URL: " .. tostring(url)
+		end
 		-- parse authority into host:port
 		local i = authority:find(':')
 		if i then
@@ -126,7 +129,9 @@ function new(client, req, body)
 		req.path = req.path or '/'
 	end
 	-- validate request.
-	assert(req.host, "request missing host or url.")
+	if req.host == nil then
+		return nil, "Invalid request missing host or URL."
+	end
 
 	-- check if Host header needs to be set.
 	if not req.headers.Host and req.http_version == "HTTP/1.1" then

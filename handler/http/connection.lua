@@ -311,7 +311,9 @@ function client(loop, pool)
 
 	create_response_parser(conn)
 
-	conn.sock = connection.tcp(loop, conn, pool.address, pool.port)
+	local sock, err = connection.tcp(loop, conn, pool.address, pool.port)
+	if sock == nil then return nil, err end
+	conn.sock = sock
 
 	return conn
 end

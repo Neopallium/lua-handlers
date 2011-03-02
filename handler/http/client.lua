@@ -33,10 +33,12 @@ local client_mt = {}
 client_mt.__index = client_mt
 
 function client_mt:request(req)
-	local req = request.new(self, req)
+	local req, err = request.new(self, req)
+	if req == nil then return req, err end
 
 	-- queue request to be processed.
-	self.hosts:queue_request(req)
+	local stat, err = self.hosts:queue_request(req)
+	if not stat then return nil, err end
 
 	return req
 end
