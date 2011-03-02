@@ -23,23 +23,23 @@ local ev = require'ev'
 local loop = ev.Loop.default
 
 local udp_client_mt = {
-handle_error = function(this, err)
+handle_error = function(self, err)
 	if err ~= 'closed' then
 		print('udp_client.error:', err)
 	end
 end,
-handle_data = function(this, data, ip, port)
+handle_data = function(self, data, ip, port)
 	print('udp_client.data:',data, ip, port)
-	this.sck:sendto('hello\n', ip, port)
+	self.sck:sendto('hello\n', ip, port)
 end,
 }
 udp_client_mt.__index = udp_client_mt
 
 -- new udp client
 local function new_udp_client(host, port)
-	local this = setmetatable({}, udp_client_mt)
-	this.sck = datagram.new(loop, this, host, port)
-	return this
+	local self = setmetatable({}, udp_client_mt)
+	self.sck = datagram.new(loop, self, host, port)
+	return self
 end
 
 local host = arg[1] or "*"

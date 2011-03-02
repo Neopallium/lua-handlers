@@ -85,8 +85,8 @@ function new(client, req, body)
 		req = { url = req, body = body, headers = new_headers() }
 	else
 		req.headers = new_headers(req.headers)
-		-- default port
-		req.port = tonumber(req.port) or 80
+		-- convert port to number
+		req.port = tonumber(req.port)
 	end
 
 	-- mark request as non-cancelled.
@@ -116,17 +116,30 @@ function new(client, req, body)
 		if i then
 			-- have host & port
 			req.host = authority:sub(1,i-1)
-			req.port = tonumber(authority:sub(i+1)) or 80
+			req.port = tonumber(authority:sub(i+1)) or nil
 		else
 			-- only have host
 			req.host = authority
-			req.port = 80
 		end
 		req.scheme = scheme
 		req.path = path or '/'
 	else
 		req.scheme = req.scheme or 'http'
 		req.path = req.path or '/'
+	end
+	-- validate scheme
+	local scheme = req.scheme
+	local default_port
+	scheme = scheme:lower()
+	if scheme == 'http' then
+		default_port = 80
+	elseif scheme == 'https' then
+		default_port = 443
+	else
+		error("Unknown protocol scheme in URL: " .. scheme)
+	end
+	if req.port == nil then
+		req.port = default_port
 	end
 	-- validate request.
 	if req.host == nil then
@@ -137,7 +150,7 @@ function new(client, req, body)
 	if not req.headers.Host and req.http_version == "HTTP/1.1" then
 		local host = req.host
 		local port = req.port
-		if port and port ~= 80 then
+		if port and port ~= default_port then
 			-- none default port add it to the authority
 			host = host .. ":" .. tostring(port)
 		end

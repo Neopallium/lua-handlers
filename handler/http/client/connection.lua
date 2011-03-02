@@ -301,7 +301,6 @@ end
 module(...)
 
 function new(loop, pool)
-	assert(not pool.is_https, "HTTPS not supported yet!")
 	local conn = setmetatable({
 		is_closed = false,
 		pool = pool,
@@ -311,7 +310,12 @@ function new(loop, pool)
 
 	create_response_parser(conn)
 
-	local sock, err = connection.tcp(loop, conn, pool.address, pool.port)
+	local sock, err
+	if pool.is_https then
+		sock, err = connection.tls_tcp(loop, conn, pool.address, pool.port, tls, true)
+	else
+		sock, err = connection.tcp(loop, conn, pool.address, pool.port)
+	end
 	if sock == nil then return nil, err end
 	conn.sock = sock
 

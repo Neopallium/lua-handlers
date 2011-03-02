@@ -22,6 +22,8 @@ local setmetatable = setmetatable
 local print = print
 local assert = assert
 
+local nixio = require"nixio"
+
 local request = require"handler.http.client.request"
 local hosts = require"handler.http.client.hosts"
 local headers = require"handler.http.headers"
@@ -41,6 +43,16 @@ function client_mt:request(req)
 	if not stat then return nil, err end
 
 	return req
+end
+
+function client_mt:get_tls_context()
+	local tls = self.tls
+	if not tls then
+		-- make default client-side TLS context.
+		tls = nixio.tls'client'
+		self.tls = tls
+	end
+	return tls
 end
 
 module(...)

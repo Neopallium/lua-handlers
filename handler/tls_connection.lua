@@ -24,6 +24,7 @@ local print = print
 local nixio = require"nixio"
 
 -- important SSL error codes
+local SSL_ERROR_SSL = 1
 local SSL_ERROR_WANT_READ = 2
 local SSL_ERROR_WANT_WRITE = 3
 local SSL_ERROR_WANT_CONNECT = 7
@@ -292,8 +293,11 @@ local function sock_tls_wrap(self, tls, is_client)
 		else
 			if code == SSL_ERROR_WANT_WRITE then
 				self.io_write:start(loop)
-			else
+			elseif code == SSL_ERROR_WANT_READ then
 				self.io_write:stop(loop)
+			else
+				-- report error
+				sock_handle_error(self, "SSL_Error: code=" .. code)
 			end
 		end
 	end

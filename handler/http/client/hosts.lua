@@ -94,6 +94,10 @@ function host_mt:queue_request(req)
 	return conn:queue_request(req)
 end
 
+function host_mt:get_tls_context()
+	return self.client:get_tls_context()
+end
+
 local function new_host(cache, client, scheme, address, port)
 	return setmetatable({
 		cache = cache,
