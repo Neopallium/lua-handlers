@@ -32,14 +32,14 @@ zpub:bind("tcp://lo:5555")
 local msg_id = 1
 
 local tcp_client_mt = {
-handle_error = function(this, err)
+handle_error = function(self, err)
 	if err ~= 'closed' then
 		print('tcp_client:', err)
 	end
 end,
-handle_connected = function(this)
+handle_connected = function(self)
 end,
-handle_data = function(this, data)
+handle_data = function(self, data)
 	zpub:send(tostring(msg_id) .. ':' .. data)
   msg_id = msg_id + 1
 end,

@@ -23,13 +23,13 @@ local ev = require'ev'
 local loop = ev.Loop.default
 
 local tcp_client_mt = {
-handle_error = function(this, err)
+handle_error = function(self, err)
 	print('tcp_client.error:', err)
 end,
-handle_connected = function(this)
+handle_connected = function(self)
 	print('tcp_client.connected')
 end,
-handle_data = function(this, data)
+handle_data = function(self, data)
 	print('tcp_client.data:', data)
 end,
 }
@@ -37,9 +37,9 @@ tcp_client_mt.__index = tcp_client_mt
 
 -- new tcp client
 local function new_tcp_client(host, port)
-	local this = setmetatable({}, tcp_client_mt)
-	this.sck = connection.tcp(loop, this, host, port)
-	return this
+	local self = setmetatable({}, tcp_client_mt)
+	self.sck = connection.tcp(loop, self, host, port)
+	return self
 end
 
 local host, port = (arg[1] or 'localhost:8081'):match('^([^:]*):(.*)$')

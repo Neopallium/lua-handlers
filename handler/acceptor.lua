@@ -26,8 +26,10 @@ local tostring = tostring
 local ev = require"ev"
 local nixio = require"nixio"
 local new_socket = nixio.socket
-local connection = require"handler.nixio.connection"
+local connection = require"handler.connection"
+local tls_connection = require"handler.tls_connection"
 local wrap_connected = connection.wrap_connected
+local tls_wrap_connected = connection.tls_wrap_connected
 
 local function n_assert(test, errno, msg)
 	return assert(test, msg)
@@ -44,10 +46,12 @@ end,
 }
 acceptor_mt.__index = acceptor_mt
 
-local function sock_new_bind_listen(loop, handler, domain, _type, host, port, backlog)
+local function sock_new_bind_listen(loop, handler, domain, _type, host, port, tls, backlog)
 	local is_dgram = (_type == 'dgram')
 	-- nixio uses nil to mean any local address.
 	if host == '*' then host = nil end
+	-- 'backlog' is optional, it defaults to 256
+	backlog = backlog or 256
 	-- create nixio socket
 	local server = new_socket(domain, _type)
 
@@ -58,6 +62,7 @@ local function sock_new_bind_listen(loop, handler, domain, _type, host, port, ba
 		server = server,
 		host = host,
 		port = port,
+		tls = tls,
 		-- max sockets to try to accept on one event
 		accept_max = 100,
 		backlog = backlog,
@@ -107,8 +112,6 @@ local function sock_new_bind_listen(loop, handler, domain, _type, host, port, ba
 						end
 						-- get socket handler object from socket
 						client = sock.handler
-						-- call connected callback, socket is ready for sending data.
-						client:handle_connected()
 					else
 						-- get socket handler object from socket
 						client = sock.handler
@@ -132,15 +135,15 @@ local function sock_new_bind_listen(loop, handler, domain, _type, host, port, ba
 					break
 				else
 					-- wrap nixio socket
-					sock = wrap_connected(loop, nil, sock)
+					if tls then
+						sock = tls_wrap_connected(loop, nil, sock, tls)
+					else
+						sock = wrap_connected(loop, nil, sock)
+					end
 					if handler(sock) == nil then
 						-- connect handler returned nil, maybe they are rejecting connections.
 						break
 					end
-					-- get socket handler object from socket
-					local client = sock.handler
-					-- call connected callback, socket is ready for sending data.
-					client:handle_connected()
 				end
 				count = count + 1
 			until count >= max
@@ -158,7 +161,7 @@ local function sock_new_bind_listen(loop, handler, domain, _type, host, port, ba
 	n_assert(server:bind(host, port))
 	if not is_dgram then
 		-- set the socket to listening mode
-		n_assert(server:listen(backlog or 256))
+		n_assert(server:listen(backlog))
 	end
 
 	return self
@@ -167,22 +170,30 @@ end
 module(...)
 
 function tcp(loop, handler, host, port, backlog)
-	return sock_new_bind_listen(loop, handler, 'inet', 'stream', host, port, backlog)
+	return sock_new_bind_listen(loop, handler, 'inet', 'stream', host, port, nil, backlog)
 end
 
 function tcp6(loop, handler, host, port, backlog)
-	return sock_new_bind_listen(loop, handler, 'inet6', 'stream', host, port, backlog)
+	return sock_new_bind_listen(loop, handler, 'inet6', 'stream', host, port, nil, backlog)
+end
+
+function tls_tcp(loop, handler, host, port, tls, backlog)
+	return sock_new_bind_listen(loop, handler, 'inet', 'stream', host, port, tls, backlog)
+end
+
+function tls_tcp6(loop, handler, host, port, tls, backlog)
+	return sock_new_bind_listen(loop, handler, 'inet6', 'stream', host, port, tls, backlog)
 end
 
 function udp(loop, handler, host, port, backlog)
-	return sock_new_bind_listen(loop, handler, 'inet', 'dgram', host, port, backlog)
+	return sock_new_bind_listen(loop, handler, 'inet', 'dgram', host, port, nil, backlog)
 end
 
 function udp6(loop, handler, host, port, backlog)
-	return sock_new_bind_listen(loop, handler, 'inet6', 'dgram', host, port, backlog)
+	return sock_new_bind_listen(loop, handler, 'inet6', 'dgram', host, port, nil, backlog)
 end
 
 function unix(loop, handler, path, backlog)
-	return sock_new_bind_listen(loop, handler, 'unix', 'stream', path, nil, backlog)
+	return sock_new_bind_listen(loop, handler, 'unix', 'stream', path, nil, nil, backlog)
 end
 

@@ -18,33 +18,39 @@
 -- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 -- THE SOFTWARE.
 
-local datagram = require'handler.nixio.datagram'
+local nixio = require'nixio'
+local connection = require'handler.connection'
 local ev = require'ev'
 local loop = ev.Loop.default
 
-local udp_client_mt = {
-handle_error = function(this, err)
-	if err ~= 'closed' then
-		print('udp_client.error:', err)
-	end
+-- create client-side TLS context
+local tls = nixio.tls'client'
+
+local tcp_client_mt = {
+handle_error = function(self, err)
+	print('tcp_client.error:', err)
 end,
-handle_data = function(this, data, ip, port)
-	print('udp_client.data:',data, ip, port)
-	this.sck:sendto('hello\n', ip, port)
+handle_connected = function(self)
+	print('tcp_client.connected')
+	self.sock:send('GET / HTTP/1.1\r\nHost: localhost:443\r\n\r\n')
+end,
+handle_data = function(self, data)
+	print('tcp_client.data:', data)
+	-- echo data
+	--self.sock:send(data)
 end,
 }
-udp_client_mt.__index = udp_client_mt
+tcp_client_mt.__index = tcp_client_mt
 
--- new udp client
-local function new_udp_client(host, port)
-	local this = setmetatable({}, udp_client_mt)
-	this.sck = datagram.udp(loop, this, host, port)
-	return this
+-- new tcp client
+local function new_tcp_client(host, port)
+	local self = setmetatable({}, tcp_client_mt)
+	self.sock = connection.tls_tcp(loop, self, host, port, tls)
+	return self
 end
 
-local host = arg[1] or "*"
-local port = arg[2] or 8081
-local client = new_udp_client(host, port)
+local host, port = (arg[1] or 'localhost:4081'):match('^([^:]*):(.*)$')
+local client = new_tcp_client(host, port)
 
 loop:loop()
 

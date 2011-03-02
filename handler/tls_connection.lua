@@ -21,15 +21,13 @@
 local setmetatable = setmetatable
 local print = print
 
-local ev = require"ev"
 local nixio = require"nixio"
-local new_socket = nixio.socket
 
-local tls_connection = require"handler.tls_connection"
-local sock_tls_wrap = tls_connection.wrap
-
--- important errors
-local EINPROGRESS = nixio.const.EINPROGRESS
+-- important SSL error codes
+local SSL_ERROR_WANT_READ = 2
+local SSL_ERROR_WANT_WRITE = 3
+local SSL_ERROR_WANT_CONNECT = 7
+local SSL_ERROR_WANT_ACCEPT = 8
 
 local function sock_setsockopt(self, level, option, value)
 	return self.sock:setsockopt(level, option, value)
@@ -56,14 +54,17 @@ local function sock_close(self)
 	if not self.write_buf or self.has_error then
 		self.io_write:stop(self.loop)
 		self.io_read:stop(self.loop)
-		self.sock:close()
+		self.sock:shutdown()
 	end
 end
 
-local function sock_handle_error(self, err)
+local function sock_handle_error(self, err, errno)
 	local handler = self.handler
 	local errFunc = handler.handle_error
 	self.has_error = true -- mark socket as bad.
+	if err == nil then
+		err = 'TLS error code: ' .. tostring(errno)
+	end
 	if errFunc then
 		errFunc(handler, err)
 	else
@@ -165,13 +166,13 @@ local function sock_recv_data(self)
 					is_connecting = false
 					sock_handle_connected(self)
 				end
-				-- no data
-				return true
-			else -- data == nil
+			elseif errno ~= SSL_ERROR_WANT_READ then
 				-- report error
-				sock_handle_error(self, err)
+				sock_handle_error(self, err, errno)
 				return false, err
 			end
+			-- no data
+			return true
 		end
 		-- check if the other side shutdown there send stream
 		if #data == 0 then
@@ -209,8 +210,24 @@ local function sock_is_closed(self)
 	return self.is_closing
 end
 
-local sock_mt = {
-is_tls = false,
+local function sock_handshake(self, is_client)
+	local stat, code
+	if is_client then
+		stat, code = self.sock:connect()
+	else
+		stat, code = self.sock:accept()
+	end
+	if stat then
+		self.is_handshake_complete = true
+		return true, code
+	else
+		self.is_handshake_complete = false
+		return false, code
+	end
+end
+
+local tls_sock_mt = {
+is_tls = true,
 send = sock_send,
 getsockopt = sock_getsockopt,
 setsockopt = sock_setsockopt,
@@ -221,26 +238,16 @@ close = sock_close,
 sethandler = sock_sethandler,
 is_closed = sock_is_closed,
 }
-sock_mt.__index = sock_mt
+tls_sock_mt.__index = tls_sock_mt
 
-local function sock_wrap(loop, handler, sock, is_connected)
-	-- create socket object
-	local self = {
-		loop = loop,
-		handler = handler,
-		sock = sock,
-		is_connecting = true,
-		write_blocked = false,
-		read_len = 8192,
-		read_max = 65536,
-		is_closing = false,
-	}
-	setmetatable(self, sock_mt)
+local function sock_tls_wrap(self, tls, is_client)
+	local loop = self.loop
+	-- create TLS context
+	tls = tls or nixio.tls(is_client and 'client' or 'server')
+	-- convertion normal socket to TLS
+	setmetatable(self, tls_sock_mt)
+	self.sock = tls:create(self.sock)
 
-	-- make nixio socket non-blocking
-	sock:setblocking(false)
-	-- get socket FD
-	local fd = sock:fileno()
 	-- create callback closure
 	local write_cb = function()
 		local num, err = sock_send_data(self, self.write_buf)
@@ -262,99 +269,47 @@ local function sock_wrap(loop, handler, sock, is_connected)
 		sock_recv_data(self)
 	end
 
-	-- create IO watchers.
-	if is_connected then
-		self.io_write = ev.IO.new(write_cb, fd, ev.WRITE)
-		self.is_connecting = false
-	else
-		local connected_cb = function(loop, io, revents)
-			if not self.write_blocked then
-				io:stop(loop)
+	-- create callback for TLS handshake
+	self.is_handshake_complete = false
+	self.write_blocked = true -- block writes until handshake is completed.
+	local handshake_cb = function()
+		local is_handshake_complete, code = sock_handshake(self, is_client)
+		if is_handshake_complete then
+			self.write_blocked = false
+			self.io_write:stop(loop)
+			-- install normal read/write callbacks
+			self.io_write:callback(write_cb)
+			self.io_read:callback(read_cb)
+			-- check if we where in the connecting state.
+			if self.is_connecting then
+				sock_handle_connected(self)
 			end
-			-- change callback to write_cb
-			io:callback(write_cb)
-			-- check for connect errors by tring to read from the socket.
-			sock_recv_data(self)
+			-- check for pending write data.
+			local buf = self.write_buf
+			if buf then
+				sock_send_data(self, buf)
+			end
+		else
+			if code == SSL_ERROR_WANT_WRITE then
+				self.io_write:start(loop)
+			else
+				self.io_write:stop(loop)
+			end
 		end
-		self.io_write = ev.IO.new(connected_cb, fd, ev.WRITE)
-		self.io_write:start(loop)
 	end
-	self.io_read = ev.IO.new(read_cb, fd, ev.READ)
+	self.io_write:callback(handshake_cb)
+	self.io_read:callback(handshake_cb)
+	-- start TLS handshake
+	handshake_cb()
+
+	-- always keep read events enabled.
 	self.io_read:start(loop)
 
 	return self
 end
 
-local function sock_new_connect(loop, handler, domain, _type, host, port)
-	-- create nixio socket
-	local sock = new_socket(domain, _type)
-	-- wrap socket
-	local self = sock_wrap(loop, handler, sock)
-	-- connect to host:port
-	local ret, errno, err = sock:connect(host, port)
-	if not ret and errno ~= EINPROGRESS then
-		-- report error
-		sock_handle_error(self, err)
-		return nil, err
-	end
-	return self
-end
-
 module(...)
 
---
--- TCP/UDP/Unix sockets (non-tls)
---
-function tcp(loop, handler, host, port)
-	return sock_new_connect(loop, handler, 'inet', 'stream', host, port)
-end
-
-function tcp6(loop, handler, host, port)
-	return sock_new_connect(loop, handler, 'inet6', 'stream', host, port)
-end
-
-function udp(loop, handler, host, port)
-	return sock_new_connect(loop, handler, 'inet', 'dgram', host, port)
-end
-
-function udp6(loop, handler, host, port)
-	return sock_new_connect(loop, handler, 'inet6', 'dgram', host, port)
-end
-
-function unix(loop, handler, path)
-	return sock_new_connect(loop, handler, 'unix', 'stream', path)
-end
-
-function wrap_connected(loop, handler, sock)
-	-- wrap socket
-	return sock_wrap(loop, handler, sock, true)
-end
-
---
--- TCP TLS sockets
---
-function tls_tcp(loop, handler, host, port, tls, is_client)
-	local self = tcp(loop, handler, host, port)
-	-- default to client-side TLS
-	if is_client == nil then is_client = true end
-	return sock_tls_wrap(self, tls, is_client)
-end
-
-function tls_tcp6(loop, handler, host, port, tls, is_client)
-	local self = tcp6(loop, handler, host, port)
-	-- default to client-side TLS
-	if is_client == nil then is_client = true end
-	return sock_tls_wrap(self, tls, is_client)
-end
-
-function tls_wrap_connected(loop, handler, sock, tls, is_client)
-	-- wrap socket
-	local self = sock_wrap(loop, handler, sock, false)
-	-- default to server-side TLS
-	if is_client == nil then is_client = false end
-	return sock_tls_wrap(self, tls, is_client)
-end
-
 -- export
-wrap = sock_wrap
+wrap = sock_tls_wrap
 

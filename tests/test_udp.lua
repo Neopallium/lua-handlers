@@ -23,27 +23,27 @@ local ev = require'ev'
 local loop = ev.Loop.default
 
 local udp_client_mt = {
-handle_error = function(this, err)
+handle_error = function(self, err)
 	if err ~= 'closed' then
 		print('udp_client.error:', err)
 	end
 end,
-handle_connected = function(this)
+handle_connected = function(self)
 	print('udp_client.connected')
-	this.sck:send('hello world!\n')
+	self.sck:send('hello world!\n')
 end,
-handle_data = function(this, data)
+handle_data = function(self, data)
 	print('udp_client.data:',data)
-	this.sck:send('echo:' .. data .. '\n')
+	self.sck:send('echo:' .. data .. '\n')
 end,
 }
 udp_client_mt.__index = udp_client_mt
 
 -- new udp client
 local function new_udp_client(host, port)
-	local this = setmetatable({}, udp_client_mt)
-	this.sck = connection.udp(loop, this, host, port)
-	return this
+	local self = setmetatable({}, udp_client_mt)
+	self.sck = connection.udp(loop, self, host, port)
+	return self
 end
 
 local host = arg[1] or "localhost"
