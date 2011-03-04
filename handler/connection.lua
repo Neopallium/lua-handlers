@@ -25,8 +25,8 @@ local ev = require"ev"
 local nixio = require"nixio"
 local new_socket = nixio.socket
 
-local tls_connection = require"handler.tls_connection"
-local sock_tls_wrap = tls_connection.wrap
+local tls_backend = require"handler.connection.tls_backend"
+local sock_tls_wrap = tls_backend.wrap
 
 -- important errors
 local EINPROGRESS = nixio.const.EINPROGRESS
@@ -47,7 +47,16 @@ local function sock_getsockname(self)
 	return self.sock:getsockname()
 end
 
-local function sock_shutdown(self, how)
+local function sock_shutdown(self, read, write)
+	local how = ''
+	if read then
+		how = 'rd'
+		-- stop reading from socket, we don't want any more data.
+		self.io_read:stop(self.loop)
+	end
+	if write then
+		how = how .. 'wr'
+	end
 	return self.sock:shutdown(how)
 end
 
@@ -57,6 +66,18 @@ local function sock_close(self)
 		self.io_write:stop(self.loop)
 		self.io_read:stop(self.loop)
 		self.sock:close()
+	end
+end
+
+local function sock_block_read(self, block)
+	-- block/unblock read
+	if block ~= self.read_blocked then
+		self.read_blocked = block
+		if block then
+			self.io_read:stop(self.loop)
+		else
+			self.io_read:start(self.loop)
+		end
 	end
 end
 
@@ -192,7 +213,7 @@ local function sock_recv_data(self)
 			sock_handle_error(self, err)
 			return false, err
 		end
-	until len >= read_max
+	until len >= read_max and not self.read_blocked
 
 	return true
 end
@@ -218,6 +239,7 @@ getsockname = sock_getsockname,
 getpeername = sock_getpeername,
 shutdown = sock_shutdown,
 close = sock_close,
+block_read = sock_block_read,
 sethandler = sock_sethandler,
 is_closed = sock_is_closed,
 }
@@ -231,6 +253,7 @@ local function sock_wrap(loop, handler, sock, is_connected)
 		sock = sock,
 		is_connecting = true,
 		write_blocked = false,
+		read_blocked = false,
 		read_len = 8192,
 		read_max = 65536,
 		is_closing = false,

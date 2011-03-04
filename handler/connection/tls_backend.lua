@@ -46,8 +46,11 @@ local function sock_getsockname(self)
 	return self.sock:getsockname()
 end
 
-local function sock_shutdown(self, how)
-	return self.sock:shutdown(how)
+local function sock_shutdown(self, read, write)
+	if read then
+		-- stop reading from socket, we don't want any more data.
+		self.io_read:stop(self.loop)
+	end
 end
 
 local function sock_close(self)
@@ -56,6 +59,18 @@ local function sock_close(self)
 		self.io_write:stop(self.loop)
 		self.io_read:stop(self.loop)
 		self.sock:shutdown()
+	end
+end
+
+local function sock_block_read(self, block)
+	-- block/unblock read
+	if block ~= self.read_blocked then
+		self.read_blocked = block
+		if block then
+			self.io_read:stop(self.loop)
+		else
+			self.io_read:start(self.loop)
+		end
 	end
 end
 
@@ -194,7 +209,7 @@ local function sock_recv_data(self)
 			sock_handle_error(self, err)
 			return false, err
 		end
-	until len >= read_max
+	until len >= read_max and not self.read_blocked
 
 	return true
 end
@@ -236,6 +251,7 @@ getsockname = sock_getsockname,
 getpeername = sock_getpeername,
 shutdown = sock_shutdown,
 close = sock_close,
+block_read = sock_block_read,
 sethandler = sock_sethandler,
 is_closed = sock_is_closed,
 }
@@ -272,7 +288,9 @@ local function sock_tls_wrap(self, tls, is_client)
 
 	-- create callback for TLS handshake
 	self.is_handshake_complete = false
-	self.write_blocked = true -- block writes until handshake is completed.
+	-- block writes until handshake is completed, to force queueing of sent data.
+	self.write_blocked = true
+	self.read_blocked = false -- no need to block reads.
 	local handshake_cb = function()
 		local is_handshake_complete, code = sock_handshake(self, is_client)
 		if is_handshake_complete then
