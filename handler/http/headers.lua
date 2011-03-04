@@ -89,7 +89,7 @@ end
 
 local headers_mt = {}
 
-headers_mt.__index = function(headers, name)
+function headers_mt.__index(headers, name)
 	-- normalize header name
 	local norm = normalized[name:lower()]
 	-- if normalized name is nil or the same as name
@@ -101,7 +101,7 @@ headers_mt.__index = function(headers, name)
 	return rawget(headers, norm)
 end
 
-headers_mt.__newindex = function(headers, name, value)
+function headers_mt.__newindex(headers, name, value)
 	-- normalize header name
 	local norm = normalized[name:lower()] or name
 	rawset(headers, norm, value)
@@ -134,4 +134,29 @@ function new(headers)
 
 	return setmetatable(headers, headers_mt)
 end
+
+function dup(src)
+	local dst = new()
+	-- copy headers from src
+	for name,val in pairs(src) do
+		dst[name] = val
+	end
+	return dst
+end
+
+function copy_defaults(dst, src)
+	if dst == nil then
+		return dup(src)
+	end
+	-- make sure 'dst' is a headers object
+	dst = new(dst)
+	-- copy headers from src
+	for name,val in pairs(src) do
+		if not dst[name] then
+			dst[name] = val
+		end
+	end
+	return dst
+end
+
 

@@ -82,23 +82,15 @@ module(...)
 
 function new(client, req, body)
 	if type(req) == 'string' then
-		req = { url = req, body = body, headers = new_headers() }
+		req = { url = req, body = body, headers = http_headers.dup(client.headers) }
 	else
-		req.headers = new_headers(req.headers)
+		req.headers = http_headers.copy_defaults(req.headers, client.headers)
 		-- convert port to number
 		req.port = tonumber(req.port)
 	end
 
 	-- mark request as non-cancelled.
 	req.is_cancelled = false
-
-	-- copy common headers from client.
-	local headers = req.headers
-	for name,val in pairs(client.headers) do
-		if not headers[name] then
-			headers[name] = val
-		end
-	end
 
 	-- default to version 1.1
 	req.http_version = req.http_version or 'HTTP/1.1'

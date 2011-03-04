@@ -24,34 +24,17 @@ local setmetatable = setmetatable
 local assert = assert
 local tconcat = table.concat
 
-local ev = require"ev"
-local connection = require"handler.connection"
-local lhp = require"http.parser"
-local headers = require"handler.http.headers"
-local headers_new = headers.new
 local ltn12 = require"ltn12"
 
---
--- Chunked Transfer Encoding filter
---
-local function chunked()
-	local is_eof = false
-	return function(chunk)
-		if chunk == "" then
-			return ""
-		elseif chunk then
-			local len = #chunk
-			-- prepend chunk length
-			return format('%x\r\n', len) .. chunk .. '\r\n'
-		elseif not is_eof then
-			-- nil chunk, mark stream EOF
-			is_eof = true
-			-- return zero-length chunk.
-			return '0\r\n\r\n'
-		end
-		return nil
-	end
-end
+local lhp = require"http.parser"
+
+local connection = require"handler.connection"
+
+local chunked = require"handler.http.chunked"
+local chunked = chunked.new
+
+local response = require"handler.http.client.response"
+local new_response = response.new
 
 local function call_callback(obj, cb, ...)
 	local meth_cb = obj[cb]
@@ -112,26 +95,35 @@ function client_mt:handle_drain()
 end
 
 local function gen_headers(data, headers)
+	local offset=#data
 	for k,v in pairs(headers) do
-		data = data .. k .. ": " .. v .. "\r\n"
+		offset = offset + 1
+		data[offset] = k
+		offset = offset + 1
+		data[offset] = ": "
+		offset = offset + 1
+		data[offset] = v
+		offset = offset + 1
+		data[offset] = "\r\n"
 	end
-	return data
+	return offset
 end
 
 function client_mt:queue_request(req)
 	assert(self.cur_req == nil, "TODO: no pipeline support yet!")
 	self.cur_req = req
-	local data
 	-- request needs a reference to the connection, so it can cancel the request early.
 	req.connection = self
 	-- gen: Request-Line
-	data = req.method .. " " .. req.path .. " " .. req.http_version .. "\r\n"
+	local data = { req.method, " ", req.path, " ", req.http_version, "\r\n" }
 	-- preprocess request body
 	self:preprocess_body()
 	-- gen: Request-Headers
-	data = gen_headers(data, req.headers) .. "\r\n"
+	local offset = gen_headers(data, req.headers)
+	offset = offset + 1
+	data[offset] = "\r\n"
 	-- send request.
-	self.sock:send(data)
+	self.sock:send(tconcat(data))
 	-- send request body
 	if not self.expect_100 then
 		self:send_body()
@@ -176,7 +168,7 @@ function client_mt:preprocess_body()
 	if not req.headers['Content-Length'] then
 		req.headers['Transfer-Encoding'] = 'chunked'
 		-- add chunked filter.
-		src = ltn12.filter.chain(src, chunked())
+		src = chunked(src)
 	end
 
 	self.body_src = src
@@ -218,9 +210,8 @@ local function create_response_parser(self)
 
 	function self.on_message_begin()
 		-- setup response object.
-		resp = {}
-		headers = headers_new()
-		resp.headers = headers
+		resp = new_response()
+		headers = resp.headers
 		self.resp = resp
 		body = nil
 		need_close = false
@@ -232,8 +223,7 @@ local function create_response_parser(self)
 
 	function self.on_headers_complete()
 		-- check if we need to close the connection at the end of the response.
-		local connection = headers['Connection']
-		if connection and connection:lower() == 'close' then
+		if not parser:should_keep_alive() then
 			need_close = true
 		end
 		local status_code = parser:status_code()
@@ -274,13 +264,15 @@ local function create_response_parser(self)
 			self.skip_complete = false
 			return
 		end
+		local cur_resp = resp
 		local req = self.cur_req
-		-- disconnect request from connection.
+		-- clean-up connection and make it ready for next request
 		req.connection = nil
-		-- we are done with this request.
 		self.cur_req = nil
-		-- call request's on_finished callback
-		call_callback(req, 'on_finished', resp)
+		resp = nil
+		headers = nil
+		self.resp = nil
+		body = nil
 		-- put connection back into the pool.
 		local pool = self.pool
 		if pool and not need_close then
@@ -288,10 +280,8 @@ local function create_response_parser(self)
 		else
 			self:close()
 		end
-		resp = nil
-		headers = nil
-		self.resp = nil
-		body = nil
+		-- call request's on_finished callback
+		call_callback(req, 'on_finished', cur_resp)
 	end
 
 	parser = lhp.response(self)
