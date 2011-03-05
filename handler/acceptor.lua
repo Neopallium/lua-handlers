@@ -24,12 +24,18 @@ local assert = assert
 local tostring = tostring
 
 local ev = require"ev"
+
 local nixio = require"nixio"
 local new_socket = nixio.socket
+
 local connection = require"handler.connection"
-local tls_connection = require"handler.connection.tls_backend"
 local wrap_connected = connection.wrap_connected
+local tls_connection = require"handler.connection.tls_backend"
 local tls_wrap_connected = connection.tls_wrap_connected
+
+local uri_mod = require"handler.uri"
+local uri_parse = uri_mod.parse
+local query_parse = uri_mod.parse_query
 
 local function n_assert(test, errno, msg)
 	return assert(test, msg)
@@ -197,33 +203,52 @@ function unix(loop, handler, path, backlog)
 	return sock_new_bind_listen(loop, handler, 'unix', 'stream', path, nil, nil, backlog)
 end
 
-local function get_addr_port(url, off)
-	local addr, off = url:match('(%d+%.%d+%.%d+%.%d+)()', off)
-	local port, off = url:match(':(%d+)', off)
-	return addr, port
-end
-
-function url(loop, handler, url, backlog, default_port)
-	local scheme, off = url:match('^([^:]*)://()')
-	assert(scheme, "Invalid listen URL: " .. url)
-	scheme = scheme:lower()
-	if scheme == 'tcp' then
-		local addr, port = get_addr_port(url, off)
-		return tcp(loop, handler, addr, port or default_port, backlog)
-	elseif scheme == 'tcp6' then
-		local addr, port = get_addr_port(url, off)
-		return tcp6(loop, handler, addr, port or default_port, backlog)
-	elseif scheme == 'udp' then
-		local addr, port = get_addr_port(url, off)
-		return udp(loop, handler, addr, port or default_port, backlog)
-	elseif scheme == 'udp6' then
-		local addr, port = get_addr_port(url, off)
-		return udp6(loop, handler, addr, port or default_port, backlog)
-	elseif scheme == 'unix' then
-		local path = url:sub(off)
-		return unix(loop, handler, path, backlog)
-	else
-		error("Unknown listen URL scheme: " .. scheme)
+function uri(loop, handler, uri, backlog, default_port)
+	local orig_uri = uri
+	-- parse uri
+	uri = uri_parse(uri)
+	local scheme = uri.scheme
+	assert(scheme, "Invalid listen URI: " .. orig_uri)
+	local q = query_parse(uri.query)
+	-- check if query has a 'backlog' parameter
+	if q.backlog then
+		backlog = tonumber(q.backlog)
 	end
+	-- use scheme to select socket type.
+	if scheme == 'unix' then
+		return unix(loop, handler, uri.path, backlog)
+	else
+		local host, port = uri.host, uri.port or default_port
+		if scheme == 'tcp' then
+			return tcp(loop, handler, host, port, backlog)
+		elseif scheme == 'tcp6' then
+			return tcp6(loop, handler, host, port, backlog)
+		elseif scheme == 'udp' then
+			return udp(loop, handler, host, port, backlog)
+		elseif scheme == 'udp6' then
+			return udp6(loop, handler, host, port, backlog)
+		else
+			-- create TLS context
+			local tls = nixio.tls(q.mode or 'server') -- default to server-side
+			-- set key
+			if q.key then
+				tls:set_key(q.key)
+			end
+			-- set certificate
+			if q.cert then
+				tls:set_cert(q.cert)
+			end
+			-- set ciphers
+			if q.ciphers then
+				tls:set_ciphers(q.ciphers)
+			end
+			if scheme == 'tls' then
+				return tls_tcp(loop, handler, host, port, tls, backlog)
+			elseif scheme == 'tls6' then
+				return tls_tcp6(loop, handler, host, port, tls, backlog)
+			end
+		end
+	end
+	error("Unknown listen URI scheme: " .. scheme)
 end
 

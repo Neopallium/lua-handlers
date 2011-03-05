@@ -86,11 +86,16 @@ function server_mt:tls_listen6(tls, port, addr, backlog)
 		acceptor.tls_tcp6(self.loop, self.accept_handler, addr, port, tls, backlog))
 end
 
-function server_mt:listen_url(url, backlog)
+function server_mt:listen_uri(uri, backlog)
 	-- we don't support HTTP over UDP.
-	assert(not url:match('^udp'), "Can't accept HTTP connections from UDP socket.")
+	assert(not uri:match('^udp'), "Can't accept HTTP connections from UDP socket.")
+	-- default port
+	local port = 80
+	if uri:match('^tls') then
+		port = 443 -- default port for https
+	end
 	return self:add_acceptor(
-		acceptor.url(self.loop, self.accept_handler, url, backlog, 80))
+		acceptor.uri(self.loop, self.accept_handler, uri, backlog, port))
 end
 
 module(...)

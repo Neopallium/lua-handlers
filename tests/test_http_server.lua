@@ -70,7 +70,7 @@ local server = httpserver.new(loop,{
 
 for i=1,#arg do
 	print("HTTP server listen on:", arg[i])
-	server:listen_url(arg[i])
+	server:listen_uri(arg[i])
 end
 
 loop:loop()

@@ -25,8 +25,12 @@ local print = print
 local assert = assert
 local type = type
 local pairs = pairs
+
 local http_headers = require'handler.http.headers'
 local new_headers = http_headers.new
+
+local uri = require"handler.uri"
+local uri_parse = uri.parse
 
 local request_mt = {}
 request_mt.__index = request_mt
@@ -97,24 +101,11 @@ function new(client, req, body)
 
 	local url = req.url
 	if url then
-		-- parse url
-		local scheme, authority, path =
-			url:match('^([^:/?#]+)://([^/?#]*)(.*)$')
-		if scheme == nil or authority == nil then
+		if type(url) ~= 'string' then
 			return nil, "Invalid request URL: " .. tostring(url)
 		end
-		-- parse authority into host:port
-		local i = authority:find(':')
-		if i then
-			-- have host & port
-			req.host = authority:sub(1,i-1)
-			req.port = tonumber(authority:sub(i+1)) or nil
-		else
-			-- only have host
-			req.host = authority
-		end
-		req.scheme = scheme
-		req.path = path or '/'
+		-- parse url
+		uri_parse(url, req) -- parsed parts of url are saved into the 'req' table.
 	else
 		req.scheme = req.scheme or 'http'
 		req.path = req.path or '/'

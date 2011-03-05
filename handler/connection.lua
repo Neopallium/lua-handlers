@@ -380,6 +380,57 @@ function tls_wrap_connected(loop, handler, sock, tls, is_client)
 	return sock_tls_wrap(self, tls, is_client)
 end
 
+--
+-- URI
+--
+function uri(loop, handler, uri)
+	local orig_uri = uri
+	-- parse uri
+	uri = uri_parse(uri)
+	local scheme = uri.scheme
+	assert(scheme, "Invalid listen URI: " .. orig_uri)
+	local q = query_parse(uri.query)
+	-- use scheme to select socket type.
+	if scheme == 'unix' then
+		return unix(loop, handler, uri.path)
+	else
+		local host, port = uri.host, uri.port or default_port
+		if scheme == 'tcp' then
+			return tcp(loop, handler, host, port)
+		elseif scheme == 'tcp6' then
+			return tcp6(loop, handler, host, port)
+		elseif scheme == 'udp' then
+			return udp(loop, handler, host, port)
+		elseif scheme == 'udp6' then
+			return udp6(loop, handler, host, port)
+		else
+			local mode = q.mode or 'client'
+			local is_client = (mode == 'client')
+			-- default to client-side
+			-- create TLS context
+			local tls = nixio.tls(mode)
+			-- set key
+			if q.key then
+				tls:set_key(q.key)
+			end
+			-- set certificate
+			if q.cert then
+				tls:set_cert(q.cert)
+			end
+			-- set ciphers
+			if q.ciphers then
+				tls:set_ciphers(q.ciphers)
+			end
+			if scheme == 'tls' then
+				return tls_tcp(loop, handler, host, port, tls, is_client)
+			elseif scheme == 'tls6' then
+				return tls_tcp6(loop, handler, host, port, tls, is_client)
+			end
+		end
+	end
+	error("Unknown listen URI scheme: " .. scheme)
+end
+
 -- export
 wrap = sock_wrap
 
