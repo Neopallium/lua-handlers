@@ -47,7 +47,7 @@ end
 
 local function on_data(req, resp, data)
 	print('---- start response body')
-	io.write(data)
+	if data then io.write(data) end
 	print('---- end response body')
 end
 

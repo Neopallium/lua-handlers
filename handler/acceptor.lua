@@ -175,28 +175,52 @@ end
 
 module(...)
 
-function tcp(loop, handler, host, port, backlog)
-	return sock_new_bind_listen(loop, handler, 'inet', 'stream', host, port, nil, backlog)
-end
-
 function tcp6(loop, handler, host, port, backlog)
+	-- remove '[]' from IPv6 addresses
+	if host:sub(1,1) == '[' then
+		host = host:sub(2,-2)
+	end
 	return sock_new_bind_listen(loop, handler, 'inet6', 'stream', host, port, nil, backlog)
 end
 
-function tls_tcp(loop, handler, host, port, tls, backlog)
-	return sock_new_bind_listen(loop, handler, 'inet', 'stream', host, port, tls, backlog)
+function tcp(loop, handler, host, port, backlog)
+	if host:sub(1,1) == '[' then
+		return tcp6(loop, handler, host, port, backlog)
+	else
+		return sock_new_bind_listen(loop, handler, 'inet', 'stream', host, port, nil, backlog)
+	end
 end
 
 function tls_tcp6(loop, handler, host, port, tls, backlog)
+	-- remove '[]' from IPv6 addresses
+	if host:sub(1,1) == '[' then
+		host = host:sub(2,-2)
+	end
 	return sock_new_bind_listen(loop, handler, 'inet6', 'stream', host, port, tls, backlog)
 end
 
-function udp(loop, handler, host, port, backlog)
-	return sock_new_bind_listen(loop, handler, 'inet', 'dgram', host, port, nil, backlog)
+function tls_tcp(loop, handler, host, port, tls, backlog)
+	if host:sub(1,1) == '[' then
+		return tls_tcp6(loop, handler, host, port, tls, backlog)
+	else
+		return sock_new_bind_listen(loop, handler, 'inet', 'stream', host, port, tls, backlog)
+	end
 end
 
 function udp6(loop, handler, host, port, backlog)
+	-- remove '[]' from IPv6 addresses
+	if host:sub(1,1) == '[' then
+		host = host:sub(2,-2)
+	end
 	return sock_new_bind_listen(loop, handler, 'inet6', 'dgram', host, port, nil, backlog)
+end
+
+function udp(loop, handler, host, port, backlog)
+	if host:sub(1,1) == '[' then
+		return udp6(loop, handler, host, port, backlog)
+	else
+		return sock_new_bind_listen(loop, handler, 'inet', 'dgram', host, port, nil, backlog)
+	end
 end
 
 function unix(loop, handler, path, backlog)

@@ -330,20 +330,36 @@ module(...)
 --
 -- TCP/UDP/Unix sockets (non-tls)
 --
-function tcp(loop, handler, host, port)
-	return sock_new_connect(loop, handler, 'inet', 'stream', host, port)
-end
-
 function tcp6(loop, handler, host, port)
+	-- remove '[]' from IPv6 addresses
+	if host:sub(1,1) == '[' then
+		host = host:sub(2,-2)
+	end
 	return sock_new_connect(loop, handler, 'inet6', 'stream', host, port)
 end
 
-function udp(loop, handler, host, port)
-	return sock_new_connect(loop, handler, 'inet', 'dgram', host, port)
+function tcp(loop, handler, host, port)
+	if host:sub(1,1) == '[' then
+		return tcp6(loop, handler, host, port)
+	else
+		return sock_new_connect(loop, handler, 'inet', 'stream', host, port)
+	end
 end
 
 function udp6(loop, handler, host, port)
+	-- remove '[]' from IPv6 addresses
+	if host:sub(1,1) == '[' then
+		host = host:sub(2,-2)
+	end
 	return sock_new_connect(loop, handler, 'inet6', 'dgram', host, port)
+end
+
+function udp(loop, handler, host, port)
+	if host:sub(1,1) == '[' then
+		return udp6(loop, handler, host, port)
+	else
+		return sock_new_connect(loop, handler, 'inet', 'dgram', host, port)
+	end
 end
 
 function unix(loop, handler, path)

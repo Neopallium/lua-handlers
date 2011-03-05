@@ -1,7 +1,7 @@
 lua-handlers
 ==============
 
-Provides a set of async. callback based handlers for working with raw TCP/UDP socket, ZeroMQ sockets, or HTTP requests.
+Provides a set of async. callback based handlers for working with raw TCP/UDP socket, ZeroMQ sockets, or HTTP client/server.
 
 
 Installing
