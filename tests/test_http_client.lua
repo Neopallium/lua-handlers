@@ -1,4 +1,4 @@
--- Copyright (c) 2010 by Robert G. Jakabosky <bobby@neoawareness.com>
+-- Copyright (c) 2010-2011 by Robert G. Jakabosky <bobby@neoawareness.com>
 --
 -- Permission is hereby granted, free of charge, to any person obtaining a copy
 -- of this software and associated documentation files (the "Software"), to deal
@@ -42,7 +42,7 @@ local function on_response(req, resp)
 	for k,v in pairs(resp.headers) do
 		print(k .. ": " .. v)
 	end
-	print('---- end response headers')
+	print('\n---- end response headers')
 end
 
 local function on_data(req, resp, data)

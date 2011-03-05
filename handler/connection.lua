@@ -1,4 +1,4 @@
--- Copyright (c) 2010 by Robert G. Jakabosky <bobby@neoawareness.com>
+-- Copyright (c) 2010-2011 by Robert G. Jakabosky <bobby@neoawareness.com>
 --
 -- Permission is hereby granted, free of charge, to any person obtaining a copy
 -- of this software and associated documentation files (the "Software"), to deal
@@ -82,13 +82,15 @@ local function sock_block_read(self, block)
 end
 
 local function sock_handle_error(self, err)
-	local handler = self.handler
-	local errFunc = handler.handle_error
 	self.has_error = true -- mark socket as bad.
-	if errFunc then
-		errFunc(handler, err)
-	else
-		print('socket error:', err)
+	local handler = self.handler
+	if handler then
+		local errFunc = handler.handle_error
+		if errFunc then
+			errFunc(handler, err)
+		else
+			print('socket error:', err)
+		end
 	end
 	sock_close(self)
 end

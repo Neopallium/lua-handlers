@@ -1,4 +1,4 @@
--- Copyright (c) 2010 by Robert G. Jakabosky <bobby@neoawareness.com>
+-- Copyright (c) 2010-2011 by Robert G. Jakabosky <bobby@neoawareness.com>
 --
 -- Permission is hereby granted, free of charge, to any person obtaining a copy
 -- of this software and associated documentation files (the "Software"), to deal
@@ -27,7 +27,7 @@ local ev = require"ev"
 local nixio = require"nixio"
 local new_socket = nixio.socket
 local connection = require"handler.connection"
-local tls_connection = require"handler.tls_connection"
+local tls_connection = require"handler.connection.tls_backend"
 local wrap_connected = connection.wrap_connected
 local tls_wrap_connected = connection.tls_wrap_connected
 
@@ -195,5 +195,35 @@ end
 
 function unix(loop, handler, path, backlog)
 	return sock_new_bind_listen(loop, handler, 'unix', 'stream', path, nil, nil, backlog)
+end
+
+local function get_addr_port(url, off)
+	local addr, off = url:match('(%d+%.%d+%.%d+%.%d+)()', off)
+	local port, off = url:match(':(%d+)', off)
+	return addr, port
+end
+
+function url(loop, handler, url, backlog, default_port)
+	local scheme, off = url:match('^([^:]*)://()')
+	assert(scheme, "Invalid listen URL: " .. url)
+	scheme = scheme:lower()
+	if scheme == 'tcp' then
+		local addr, port = get_addr_port(url, off)
+		return tcp(loop, handler, addr, port or default_port, backlog)
+	elseif scheme == 'tcp6' then
+		local addr, port = get_addr_port(url, off)
+		return tcp6(loop, handler, addr, port or default_port, backlog)
+	elseif scheme == 'udp' then
+		local addr, port = get_addr_port(url, off)
+		return udp(loop, handler, addr, port or default_port, backlog)
+	elseif scheme == 'udp6' then
+		local addr, port = get_addr_port(url, off)
+		return udp6(loop, handler, addr, port or default_port, backlog)
+	elseif scheme == 'unix' then
+		local path = url:sub(off)
+		return unix(loop, handler, path, backlog)
+	else
+		error("Unknown listen URL scheme: " .. scheme)
+	end
 end
 
