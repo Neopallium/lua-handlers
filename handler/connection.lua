@@ -62,6 +62,7 @@ end
 
 local function sock_close(self)
 	self.is_closing = true
+	self.read_blocked = true
 	if not self.write_buf or self.has_error then
 		self.io_write:stop(self.loop)
 		self.io_read:stop(self.loop)
@@ -215,7 +216,7 @@ local function sock_recv_data(self)
 			sock_handle_error(self, err)
 			return false, err
 		end
-	until len >= read_max and not self.read_blocked
+	until len >= read_max or self.read_blocked
 
 	return true
 end
