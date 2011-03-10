@@ -64,13 +64,27 @@ local function on_request(server, req, resp)
 end
 
 local server = httpserver.new(loop,{
-	name = "Test HTTPServer/3.1415926535897932385",
+	-- set HTTP Server's "name/version" string.
+	name = string.format("Test-HTTPServer/%f", math.pi),
+	-- new request callback.
 	on_request = on_request,
+	-- timeouts
+	request_head_timeout = 1.0,
+	request_body_timeout = 1.0,
+	write_timeout = 1.0,
+	keep_alive_timeout = 1.0,
+	max_keep_alive_requests = 10,
 })
 
 for i=1,#arg do
 	print("HTTP server listen on:", arg[i])
 	server:listen_uri(arg[i])
+end
+
+if #arg < 1 then
+	local default_uri = 'tcp://127.0.0.1:1080/'
+	print("HTTP server listen on default port:", default_uri)
+	server:listen_uri(default_uri)
 end
 
 loop:loop()

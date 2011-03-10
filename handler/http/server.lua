@@ -21,6 +21,8 @@
 local setmetatable = setmetatable
 local print = print
 local assert = assert
+local date = os.date
+local floor = math.floor
 
 local ev = require"ev"
 
@@ -98,6 +100,27 @@ function server_mt:listen_uri(uri, backlog)
 		acceptor.uri(self.loop, self.accept_handler, uri, backlog, port))
 end
 
+local function server_update_cached_date(self, now)
+	local cached_date
+	-- get new date
+	cached_date = date('!%a, %d %b %Y %T GMT')
+	self.cached_date = cached_date
+	self.cached_now = floor(now) -- only cache now as whole seconds.
+	return cached_date
+end
+
+function server_mt:update_cached_date()
+	return server_update_cached_date(self, self.loop:now())
+end
+
+function server_mt:get_cached_date()
+	local now = floor(self.loop:now())
+	if self.cached_now ~= now then
+		return server_update_cached_date(self, now)
+	end
+	return self.cached_date
+end
+
 module(...)
 
 local function default_on_check_continue(self, req, resp)
@@ -110,6 +133,17 @@ function new(loop, self)
 	self = self or {}
 	self.acceptors = {}
 	self.loop = loop
+	-- default timeouts
+		-- maximum time to wait from the start of the request to the end of the headers.
+	self.request_head_timeout = self.request_head_timeout or 1.0
+		-- maximum time to wait from the end of the request headers to the end of the request body.
+	self.request_body_timeout = self.request_body_timeout or -1
+		-- maximum time to wait on a blocked write (i.e. with pending data to write).
+	self.write_timeout = self.write_timeout or 30.0
+		-- maximum time to wait for next request on a connection.
+	self.keep_alive_timeout = self.keep_alive_timeout or 5.0
+		-- maximum number of requests to allow on one connection.
+	self.max_keep_alive_requests = self.max_keep_alive_requests or 128
 	-- normalize http headers
 	self.headers = headers_new(self.headers)
 

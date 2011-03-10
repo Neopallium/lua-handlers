@@ -37,6 +37,10 @@ end
 local urls = arg
 local count = #urls
 
+local function on_error(req, resp, err)
+	print('---- request error =' .. err)
+end
+
 local function on_response(req, resp)
 	print('---- start response headers: status code =' .. resp.status_code)
 	for k,v in pairs(resp.headers) do
@@ -48,7 +52,7 @@ end
 local function on_data(req, resp, data)
 	print('---- start response body')
 	if data then io.write(data) end
-	print('---- end response body')
+	print('\n---- end response body')
 end
 
 local function next_url()
@@ -58,6 +62,7 @@ local function next_url()
 	-- start next request.
 	local req, err = client:request{
 		url = url,
+		on_error = on_error,
 		on_response = on_response,
 		on_data = on_data,
 		on_finished = function()

@@ -28,6 +28,8 @@ local tinsert = table.insert
 
 local ltn12 = require"ltn12"
 
+local ev = require"ev"
+
 local lhp = require"http.parser"
 
 local connection = require"handler.connection"
@@ -105,34 +107,55 @@ local function call_callback(obj, cb, ...)
 	return false
 end
 
+local abort_http_parse = {}
 local conn_mt = {}
 conn_mt.__index = conn_mt
 
 function conn_mt:close()
+	self.is_closed = true
 	local sock = self.sock
 	if sock then
 		self.sock = nil
+		-- kill timer.
+		self.timer:stop(self.loop)
 		return sock:close()
 	end
 end
 
+local function conn_raise_error(self, err)
+	-- if a request is being parsed (i.e. the request body is being read)
+	local req = self.cur_req
+	if req then
+		-- then signal an error (i.e. failed to read the whole request body)
+		call_callback(req, 'on_error', req.resp, err)
+	end
+	-- check if a response is being sent
+	local resp = self.cur_resp
+	if resp then
+		-- then signal an error (i.e. failed to write the whole response)
+		call_callback(resp, 'on_error', resp.req, err)
+	end
+end
+
+local function conn_set_next_timeout(self, timeout, reason)
+	local timer = self.timer
+	local loop = self.loop
+	if timeout < 0 then
+		-- disable timer
+		timer:stop(loop)
+		return
+	end
+	-- change timer's timeout and start it.
+	timer:again(loop, timeout)
+	self.timeout_reason = reason
+end
+
 function conn_mt:handle_error(err)
 	if err ~= 'closed' then
-		-- if a request is being parsed (i.e. the request body is being read)
-		local req = self.cur_req
-		if req then
-			-- then signal an error (i.e. failed to read the whole request body)
-			call_callback(req, 'on_error', req.resp, err)
-		end
-		-- check if a response is being sent
-		local resp = self.cur_resp
-		if resp then
-			-- then signal an error (i.e. failed to write the whole response)
-			call_callback(resp, 'on_error', resp.req, err)
-		end
+		conn_raise_error(self, err)
 	end
 	-- close connection on all errors.
-	self.is_closed = true
+	self:close()
 end
 
 function conn_mt:handle_connected()
@@ -140,7 +163,18 @@ end
 
 function conn_mt:handle_data(data)
 	local parser = self.parser
-	local bytes_parsed = parser:execute(data)
+	local execute = parser.execute
+	local status, bytes_parsed = pcall(execute, parser, data)
+	-- handle parse error
+	if not status then
+		local err = bytes_parsed
+		-- check if error is not an "abort http parse" error.
+		if err ~= abort_http_parse then
+			-- raise an error
+			return conn_raise_error(self, err)
+		end
+		return
+	end
 	if parser:is_upgrade() then
 		-- TODO: handle upgrade
 		-- protocol changing.
@@ -202,8 +236,17 @@ local function conn_send_response(self, resp)
 	local data = { http_version, " ", status_code, "\r\n" }
 	-- preprocess response body
 	self:preprocess_body()
+	-- check for 'Date' header.
+	local headers = resp.headers
+	if not headers.Date then
+		headers.Date = self.server:get_cached_date()
+	end
+	-- Is the connection closing after this response?
+	if self.need_close and #self.response_queue == 0 then
+		headers.Connection = 'close'
+	end
 	-- gen: Response-Headers
-	local offset = gen_headers(data, resp.headers)
+	local offset = gen_headers(data, headers)
 	offset = offset + 1
 	-- end: Response-Headers
 	data[offset] = "\r\n"
@@ -314,6 +357,10 @@ function conn_mt:response_complete()
 		-- and send it.
 		return conn_send_response(self, resp)
 	end
+	-- check if the connection is closing.
+	if self.need_close then
+		self:close()
+	end
 end
 
 local function create_request_parser(self)
@@ -322,14 +369,19 @@ local function create_request_parser(self)
 	local headers
 	local parser
 	local body
-	local need_close
+	local max_requests = self.max_keep_alive_requests
+
+	-- start timeout
+	conn_set_next_timeout(self, self.request_head_timeout, "Read HTTP Request timed out.")
 
 	function self.on_message_begin()
+		-- update timeout
+		conn_set_next_timeout(self, self.request_head_timeout, "Read HTTP Request timed out.")
 		-- setup request object.
 		req = new_request()
 		headers = req.headers
 		body = nil
-		need_close = false
+		self.need_close = false
 	end
 
 	function self.on_url(url)
@@ -355,10 +407,18 @@ local function create_request_parser(self)
 	end
 
 	function self.on_headers_complete()
+		-- update timeout
+		conn_set_next_timeout(self, self.request_body_timeout, "Read HTTP Request body timed out.")
+
 		req.major, req.minor = parser:version()
 		-- check if we need to close the connection at the end of the response.
 		if not parser:should_keep_alive() then
-			need_close = true
+			self.need_close = true
+		end
+		-- is the connection allowed to handle more requests?
+		max_requests = max_requests - 1
+		if max_requests <= 0 then
+			self.need_close = true
 		end
 		-- track the current request during read of the request body.
 		self.cur_req = req
@@ -404,6 +464,16 @@ local function create_request_parser(self)
 		headers = nil
 		self.resp = nil
 		body = nil
+		-- are we closing the connection?
+		if self.need_close then
+			local sock = self.sock
+			if sock then
+				self.sock:shutdown(true, false) -- shutdown reads, but not writes.
+			end
+			error(abort_http_parse, 0) -- end http parsing, drop all other queued http events.
+		end
+		-- start keep-alive idle timeout
+		conn_set_next_timeout(self, self.keep_alive_timeout, "Idle timeout")
 	end
 
 	parser = lhp.request(self)
@@ -413,12 +483,49 @@ end
 module(...)
 
 function new(server, sock)
+	local write_timeout = server.write_timeout or -1
 	local self = setmetatable({
 		sock = sock,
 		server = server,
+		loop = server.loop,
 		is_closed = false,
 		response_queue = {},
+		-- copy timeouts from server
+		request_head_timeout = server.request_head_timeout or -1,
+		request_body_timeout = server.request_body_timeout or -1,
+		write_timeout = write_timeout,
+		keep_alive_timeout = server.keep_alive_timeout or -1,
+		max_keep_alive_requests = server.max_keep_alive_requests or 0,
 	}, conn_mt)
+
+	-- enable write timeouts on connection.
+	if write_timeout > 0 then
+		sock:set_write_timeout(write_timeout)
+	end
+
+	-- create connection timer.
+	self.timer = ev.Timer.new(function()
+		local reason = self.timeout_reason
+		if reason then
+			-- raise error only if there is a timeout reason.
+			conn_raise_error(self, reason)
+		end
+		-- shutdown http connection
+		if #self.response_queue == 0 then
+			-- completely close connection is there is no pending responses.
+			self:close()
+		else
+			-- only shutdown read side where there are pending resposnes.
+			local sock = self.sock
+			if sock then
+				-- shutdown reads, but not writes.
+				self.sock:shutdown(true, false)
+			end
+			-- if the headers for last response haven't been sent, then tell the client
+			-- that the connection is being closed after that response.
+			self.need_close = true
+		end
+	end, 1, 1)
 
 	create_request_parser(self)
 
