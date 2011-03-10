@@ -64,7 +64,7 @@ function client_mt:handle_error(err)
 	self.is_closed = true
 	if req then
 		-- if connection was closed before we received a response
-		if not resp and err == 'closed' then
+		if not resp then
 			-- then re-queue request in a new connection.
 			if pool then
 				pool:retry_request(req, true)
