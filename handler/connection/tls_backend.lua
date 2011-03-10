@@ -23,6 +23,8 @@ local print = print
 
 local nixio = require"nixio"
 
+local ev = require"ev"
+
 -- important SSL error codes
 local SSL_ERROR_SSL = 1
 local SSL_ERROR_WANT_READ = 2
@@ -89,6 +91,48 @@ local function sock_handle_error(self, err, errno)
 	sock_close(self)
 end
 
+local function sock_set_write_timeout(self, timeout)
+	local timer = self.write_timer
+	-- default to no write timeout.
+	timeout = timeout or -1
+	self.write_timeout = timeout
+	-- enable/disable timeout
+	local is_disable = (timeout <= 0)
+	-- create the write timer if one is needed.
+	if not timer then
+		-- don't create a disabled timer.
+		if is_disable then return end
+		timer = ev.Timer.new(function()
+			sock_handle_error(self, 'write timeout')
+		end, timeout, timeout)
+		self.write_timer = timer
+		-- enable timer if socket is write blocked.
+		if self.write_blocked then
+			timer:start(self.loop)
+		end
+		return
+	end
+	-- if the timer should be disabled.
+	if is_disable then
+		-- then disable the timer
+		timer:stop(self.loop)
+		return
+	end
+	-- update timeout interval and start the timer if socket is write blocked.
+	if self.write_blocked then
+		timer:again(timeout)
+	end
+end
+
+local function sock_reset_write_timeout(self)
+	local timeout = self.write_timeout
+	local timer = self.write_timer
+	-- write timeout is disabled.
+	if timeout < 0 or timer == nil then return end
+	-- update timeout interval
+	timer:again(timeout)
+end
+
 local function sock_send_data(self, buf)
 	local sock = self.sock
 	local is_blocked = false
@@ -126,10 +170,18 @@ local function sock_send_data(self, buf)
 		if is_blocked then
 			self.write_buf = buf
 			self.io_write:start(self.loop)
+			-- socket is write blocked, start write timeout
+			sock_reset_write_timeout(self)
 			return num, 'blocked'
 		else
-			self.io_write:stop(self.loop)
+			local loop = self.loop
+			self.io_write:stop(loop)
+			-- no data to write, so stop timer.
+			self.write_timer:stop(loop)
 		end
+	elseif is_blocked then
+		-- reset write timeout, since some data was written and the socket is still write blocked.
+		sock_reset_write_timeout(self)
 	end
 	return num
 end
@@ -252,6 +304,7 @@ getpeername = sock_getpeername,
 shutdown = sock_shutdown,
 close = sock_close,
 block_read = sock_block_read,
+set_write_timeout = sock_set_write_timeout,
 sethandler = sock_sethandler,
 is_closed = sock_is_closed,
 }
