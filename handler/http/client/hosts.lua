@@ -73,6 +73,24 @@ function host_mt:put_idle_connection(conn)
 	tinsert(self.idle, conn)
 end
 
+function host_mt:retry_request(req, is_push_back)
+	-- make sure request is valid.
+	if req.is_cancelled then return end
+	-- increase retry count
+	local count = (req.retries or 0) + 1
+	req.retries = count
+	if count > 4 then
+		-- reached max request retries
+		return
+	end
+	-- queue request
+	if is_push_back then
+		tinsert(self.requests, 1, req) -- insert at head of request queue
+	else
+		tinsert(self.requests, req) -- insert at end of request queue
+	end
+end
+
 function host_mt:queue_request(req)
 	-- make sure request is valid.
 	if req.is_cancelled then return end

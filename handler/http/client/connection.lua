@@ -55,19 +55,28 @@ function client_mt:close()
 end
 
 function client_mt:handle_error(err)
-	if err ~= 'closed' then
-		local req = self.cur_req
-		-- if a request is active, signal it that there was an error
-		if req then
-			call_callback(req, 'on_error', self.resp, err)
-		end
-	end
+	local req = self.cur_req
+	local resp = self.resp
+	local pool = self.pool
 	-- flush http-parser
 	self:handle_data('')
 	-- close connection on all errors.
 	self.is_closed = true
+	if req then
+		-- if connection was closed before we received a response
+		if not resp and err == 'closed' then
+			-- then re-queue request in a new connection.
+			if pool then
+				pool:retry_request(req, true)
+			end
+			-- don't send closed error to request.
+			req = nil
+		else
+			-- request is active, signal it that there was an error
+			call_callback(req, 'on_error', resp, err)
+		end
+	end
 	-- remove connection from the pool.
-	local pool = self.pool
 	if pool then
 		pool:remove_connection(self)
 	end
@@ -266,9 +275,10 @@ local function create_response_parser(self)
 		end
 		local cur_resp = resp
 		local req = self.cur_req
-		-- clean-up connection and make it ready for next request
+		-- dis-connect request object from connection.
 		req.connection = nil
-		self.cur_req = nil
+		self.cur_req = nil 
+		-- clean-up parser and make it ready for next request
 		resp = nil
 		headers = nil
 		self.resp = nil
