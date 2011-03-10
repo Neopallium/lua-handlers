@@ -22,6 +22,7 @@ local setmetatable = setmetatable
 local print = print
 local assert = assert
 local tostring = tostring
+local tonumber = tonumber
 
 local ev = require"ev"
 
