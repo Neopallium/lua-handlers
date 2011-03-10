@@ -225,6 +225,15 @@ function udp(loop, handler, host, port, backlog)
 end
 
 function unix(loop, handler, path, backlog)
+	-- check if socket already exists.
+	local stat, errno, err = nixio.fs.lstat(path)
+	if stat then
+		-- socket already exists, try to delete it.
+		local stat, errno, err = nixio.fs.unlink(path)
+		if not stat then
+			print('Warning failed to delete old Unix domain socket: ', err)
+		end
+	end
 	return sock_new_bind_listen(loop, handler, 'unix', 'stream', path, nil, nil, backlog)
 end
 
