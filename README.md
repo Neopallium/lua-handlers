@@ -4,6 +4,84 @@ lua-handlers
 Provides a set of async. callback based handlers for working with raw TCP/UDP socket, ZeroMQ sockets, or HTTP client/server.
 
 
+Socket connect/listen URI's
+---------------------------
+
+Different types of sockets can now be created from URI strings like `tcp://localhost:1234/` or `tls:/localhost:443/?key=tests/localhost.key&cert=tests/localhost.cert`.  URI's can be used for connecting sockets or listening sockets.
+
+### TCP sockets
+
+	tcp://<hostname or ip_address>:<optional port>/
+
+### UDP sockets
+
+	udp://<hostname or ip_address>:<optional port>/
+
+### Unix domain sockets
+
+	unix://<path to unix socket>
+
+### SSL/TLS sockets over TCP
+
+	tls://<hostname or ip_address>:<optional port>/?mode=<client/server>&key=<path to PEM private key>&cert=<path to PEM public certificate>
+
+### To force IPv6 sockets
+
+	tcp6://<hostname or ipv6_address>:<optional port>/
+	udp6://<hostname or ipv6_address>:<optional port>/
+	tls6://<hostname or ipv6_address>:<optional port>/?mode=<client/server>&key=<path to PEM private key>&cert=<path to PEM public certificate>
+
+
+### Example server-side listen URIs:
+
+	-- bind tcp socket to 127.0.0.1 on port 80 with an accept backlog of 1000
+	tcp://localhost:80/?backlog=1000
+	
+	-- bind tcp socket to IPv6 address 2001:db8::1 on port 80 with an accept backlog of 1000
+	tcp://[2001:db8::1]:80/?backlog=1000
+	
+	-- bind TLS wrapped tcp socket to 127.0.0.1 on port 443 with an accept backlog of 1000
+	-- TLS defaults to mode=server when listening.
+	tls://localhost:443/?backlog=1000&key=private_key.pem&cert=public_certificate.pem
+	
+	-- bind Unix domain socket to file /tmp/unix_server.sock
+	unix:///tmp/unix_server.sock?backlog=100
+	
+	-- bind udp socket to 127.0.0.1 on port 53
+	udp://localhost:53
+	
+	-- bind udp socket to IPv6 loop back address ::1 on port 53
+	udp://[::1]:53
+	or
+	udp6://localhost:53
+
+### Example client-side connect URIs:
+
+	-- connect tcp socket to 127.0.0.1 on port 80
+	tcp://localhost:80
+	
+	-- connect tcp socket to IPv6 address 2001:db8::1 on port 80
+	tcp://[2001:db8::1]:80
+	
+	-- connect tcp socket to IPv6 address of hostname ipv6.google.com on port 80
+	tcp6://ipv6.google.com:80
+	
+	-- connect TLS wrapped tcp socket to 127.0.0.1 on port 443
+	-- TLS defaults to mode=client when connecting.
+	tls://localhost:443
+	
+	-- connect Unix domain socket to file /tmp/unix_server.sock
+	unix:///tmp/unix_server.sock
+	
+	-- connect udp socket to 127.0.0.1 on port 53
+	udp://localhost:53
+	
+	-- connect udp socket to IPv6 loop back address ::1 on port 53
+	udp://[::1]:53
+	or
+	udp6://localhost:53
+
+
 Installing
 ----------
 
