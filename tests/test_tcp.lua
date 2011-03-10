@@ -38,7 +38,7 @@ tcp_client_mt.__index = tcp_client_mt
 -- new tcp client
 local function new_tcp_client(host, port)
 	local self = setmetatable({}, tcp_client_mt)
-	self.sck = connection.tcp(loop, self, host, port)
+	self.sock = connection.tcp(loop, self, host, port)
 	return self
 end
 

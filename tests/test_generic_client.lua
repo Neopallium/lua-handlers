@@ -28,6 +28,8 @@ handle_error = function(self, err)
 end,
 handle_connected = function(self)
 	print('generic_client.connected')
+	-- say hi
+	self.sock:send('hello')
 end,
 handle_data = function(self, data)
 	print('generic_client.data:', data)
@@ -39,7 +41,7 @@ generic_client_mt.__index = generic_client_mt
 local function new_generic_client(uri)
 	print('Connecting to: ' .. uri)
 	local self = setmetatable({}, generic_client_mt)
-	self.sck = connection.uri(loop, self, uri)
+	self.sock = connection.uri(loop, self, uri)
 	return self
 end
 

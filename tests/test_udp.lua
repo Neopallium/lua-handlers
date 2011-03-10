@@ -30,11 +30,11 @@ handle_error = function(self, err)
 end,
 handle_connected = function(self)
 	print('udp_client.connected')
-	self.sck:send('hello world!\n')
+	self.sock:send('hello world!\n')
 end,
 handle_data = function(self, data)
 	print('udp_client.data:',data)
-	self.sck:send('echo:' .. data .. '\n')
+	self.sock:send('echo:' .. data .. '\n')
 end,
 }
 udp_client_mt.__index = udp_client_mt
@@ -42,7 +42,7 @@ udp_client_mt.__index = udp_client_mt
 -- new udp client
 local function new_udp_client(host, port)
 	local self = setmetatable({}, udp_client_mt)
-	self.sck = connection.udp(loop, self, host, port)
+	self.sock = connection.udp(loop, self, host, port)
 	return self
 end
 

@@ -30,7 +30,7 @@ handle_error = function(self, err)
 end,
 handle_data = function(self, data, ip, port)
 	print('udp_client.data:',data, ip, port)
-	self.sck:sendto('hello\n', ip, port)
+	self.sock:sendto('hello\n', ip, port)
 end,
 }
 udp_client_mt.__index = udp_client_mt
@@ -38,7 +38,7 @@ udp_client_mt.__index = udp_client_mt
 -- new udp client
 local function new_udp_client(host, port)
 	local self = setmetatable({}, udp_client_mt)
-	self.sck = datagram.new(loop, self, host, port)
+	self.sock = datagram.new(loop, self, host, port)
 	return self
 end
 
