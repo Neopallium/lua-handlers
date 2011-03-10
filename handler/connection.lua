@@ -20,6 +20,7 @@
 
 local setmetatable = setmetatable
 local print = print
+local assert = assert
 
 local ev = require"ev"
 local nixio = require"nixio"
@@ -27,6 +28,10 @@ local new_socket = nixio.socket
 
 local tls_backend = require"handler.connection.tls_backend"
 local sock_tls_wrap = tls_backend.wrap
+
+local uri_mod = require"handler.uri"
+local uri_parse = uri_mod.parse
+local query_parse = uri_mod.parse_query
 
 -- important errors
 local EINPROGRESS = nixio.const.EINPROGRESS

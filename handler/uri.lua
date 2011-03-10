@@ -85,7 +85,7 @@ function parse(uri, info)
 		info.path, info.query, info.fragment, off = parse_path_query_fragment(uri, off)
 	else
 		-- uri has no authority the rest of the uri is the path.
-		path = uri:sub(off)
+		info.path = uri:sub(off)
 	end
 	-- return parsed uri
 	return info
