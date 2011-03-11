@@ -201,6 +201,8 @@ local function sock_send_data(self, buf)
 end
 
 local function sock_send(self, data)
+	-- only process send when given data to send.
+	if data == nil or #data == 0 then return end
 	local num, err
 	local buf = self.write_buf
 	if buf then

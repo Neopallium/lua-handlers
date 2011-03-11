@@ -29,6 +29,9 @@ local ev = require"ev"
 local SSL_ERROR_SSL = 1
 local SSL_ERROR_WANT_READ = 2
 local SSL_ERROR_WANT_WRITE = 3
+local SSL_ERROR_WANT_X509_LOOKUP = 4
+local SSL_ERROR_SYSCALL = 5
+local SSL_ERROR_ZERO_RETURN = 6
 local SSL_ERROR_WANT_CONNECT = 7
 local SSL_ERROR_WANT_ACCEPT = 8
 
@@ -81,6 +84,9 @@ local function sock_handle_error(self, err, errno)
 	local errFunc = handler.handle_error
 	self.has_error = true -- mark socket as bad.
 	if err == nil then
+		if errno == SSL_ERROR_SYSCALL then
+			errno = nixio.errno()
+		end
 		err = 'TLS error code: ' .. tostring(errno)
 	end
 	if errFunc then
@@ -145,7 +151,7 @@ local function sock_send_data(self, buf)
 			is_blocked = true
 		else -- data == nil
 			-- report error
-			sock_handle_error(self, err)
+			sock_handle_error(self, err, errno)
 			return nil, err
 		end
 	else
@@ -187,6 +193,8 @@ local function sock_send_data(self, buf)
 end
 
 local function sock_send(self, data)
+	-- only process send when given data to send.
+	if data == nil or #data == 0 then return end
 	local num, err
 	local buf = self.write_buf
 	if buf then
