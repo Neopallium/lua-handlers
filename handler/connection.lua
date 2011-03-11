@@ -93,6 +93,7 @@ end
 
 local function sock_handle_error(self, err)
 	self.has_error = true -- mark socket as bad.
+	sock_close(self)
 	local handler = self.handler
 	if handler then
 		local errFunc = handler.handle_error
@@ -102,7 +103,6 @@ local function sock_handle_error(self, err)
 			print('socket error:', err)
 		end
 	end
-	sock_close(self)
 end
 
 local function sock_set_write_timeout(self, timeout)

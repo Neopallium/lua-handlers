@@ -83,6 +83,7 @@ local function sock_handle_error(self, err, errno)
 	local handler = self.handler
 	local errFunc = handler.handle_error
 	self.has_error = true -- mark socket as bad.
+	sock_close(self)
 	if err == nil then
 		if errno == SSL_ERROR_SYSCALL then
 			errno = nixio.errno()
@@ -94,7 +95,6 @@ local function sock_handle_error(self, err, errno)
 	else
 		print('socket error:', err)
 	end
-	sock_close(self)
 end
 
 local function sock_set_write_timeout(self, timeout)
