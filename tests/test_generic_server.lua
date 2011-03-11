@@ -18,23 +18,79 @@
 -- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 -- THE SOFTWARE.
 
+local tremove = table.remove
+local tconcat = table.concat
+local print = print
+
 local acceptor = require'handler.acceptor'
 local ev = require'ev'
 local loop = ev.Loop.default
 
+local max_id = 0
+local clients = {}
+local servers = {}
+
+local function broadcast(...)
+	local msg = tconcat({...}, ' ')
+	msg = msg .. '\n'
+	print('broadcast:', msg)
+	--for _,client in pairs(clients) do
+	for i=1,max_id do
+		local client = clients[i]
+		if type(client) == 'table' and client.is_client then
+			client:send(msg)
+		end
+	end
+end
+
+local function add_client(client)
+	-- get free client id
+	local id = clients[0]
+	if id then
+		-- remove id from free list.
+		clients[0] = clients[id]
+	else
+		-- no free ids, add client to end of the list.
+		id = #clients + 1
+		if id > max_id then
+			max_id = id
+		end
+	end
+	clients[id] = client
+	client.id = id
+	-- update max id
+	broadcast('add_client:', id)
+	return id
+end
+
+local function remove_client(client)
+	local id = client.id
+	assert(clients[id] == client, "Invalid client remove.")
+	-- add id to free list.
+	clients[id] = clients[0]
+	clients[0] = id
+	broadcast('remove_client:', id)
+end
+
 local generic_client_mt = {
+is_client = true,
 handle_error = function(self, err)
-	print('generic_client.error:', self, err)
+	print('client error:', self.id, ':', err)
 	self.timer:stop(loop)
+	-- remove client from list.
+	remove_client(self)
 end,
 handle_connected = function(self)
-	print('generic_client.connected:', self)
+	print('new client connected:', self.id)
 end,
 handle_data = function(self, data)
-	print('generic_client.data:', self, data)
+	broadcast('msg from: client.' .. tostring(self.id) .. ':', data)
 end,
 handle_timer = function(self)
 	self.sock:send('ping\n')
+end,
+send = function(self, msg)
+	self.sock:send(msg)
 end,
 }
 generic_client_mt.__index = generic_client_mt
@@ -48,12 +104,14 @@ local function new_generic_client(sock)
 	-- create timer watcher
 	self.timer = ev.Timer.new(function()
 		self:handle_timer()
-	end, 1.0, 1.0)
+	end, 2.0, 2.0)
 	self.timer:start(loop)
+
+	-- add client to list.
+	add_client(self)
 	return self
 end
 
-local servers = {}
 -- new generic server
 local function new_server(uri, handler)
 	print('New generic server listen on: ' .. uri)

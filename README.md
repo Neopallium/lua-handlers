@@ -82,6 +82,25 @@ Different types of sockets can now be created from URI strings like `tcp://local
 	udp6://localhost:53
 
 
+Example generic socket server & client
+--------------------------------------
+
+The generic server can listen on any number of sockets with different types.  The clients read stdin and send each line to the server which then re-sends the message to all connected clients.
+
+Start generic socket server:
+	lua tests/test_generic_server.lua tcp://127.0.0.1:1080/ "tls://127.0.0.1:4433/?key=tests/localhost.key&cert=tests/localhost.cert" tcp://[::1]:1082/ unix:///tmp/test.sock?backlog=1234 udp6://localhost:2053
+
+Start generic socket client:
+	lua tests/test_generic_client.lua tcp://localhost:1080
+	-- or
+	lua tests/test_generic_client.lua udp6://localhost:2053
+	-- or
+	lua tests/test_generic_client.lua tls://127.0.0.1:4433/
+	-- or
+	lua tests/test_generic_client.lua tcp://[::1]:1082/
+	-- or
+	lua tests/test_generic_client.lua unix:///tmp/test.sock
+
 Installing
 ----------
 

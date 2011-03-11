@@ -22,17 +22,23 @@ local connection = require'handler.connection'
 local ev = require'ev'
 local loop = ev.Loop.default
 
+local io_in
+
 local generic_client_mt = {
 handle_error = function(self, err)
-	print('generic_client.error:', err)
+	print('client.error:', err)
+	io_in:stop(loop)
 end,
 handle_connected = function(self)
-	print('generic_client.connected')
+	print('client.connected: sending hello message to server')
 	-- say hi
-	self.sock:send('hello')
+	self.sock:send('hello from client connected to: ' .. self.uri)
 end,
 handle_data = function(self, data)
-	print('generic_client.data:', data)
+	print('from server: ' .. data)
+end,
+send = function(self, data)
+	self.sock:send(data)
 end,
 }
 generic_client_mt.__index = generic_client_mt
@@ -40,13 +46,22 @@ generic_client_mt.__index = generic_client_mt
 -- new generic client
 local function new_generic_client(uri)
 	print('Connecting to: ' .. uri)
-	local self = setmetatable({}, generic_client_mt)
+	local self = setmetatable({ uri = uri }, generic_client_mt)
 	self.sock = connection.uri(loop, self, uri)
 	return self
 end
 
 local uri = arg[1] or 'tcp://localhost:8081/'
 local client = new_generic_client(uri)
+
+local function io_in_cb()
+	local line = io.read("*l")
+	if line and #line > 0 then
+		client:send(line)
+	end
+end
+io_in = ev.IO.new(io_in_cb, 0, ev.READ)
+io_in:start(loop)
 
 loop:loop()
 
