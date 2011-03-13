@@ -183,7 +183,9 @@ local function sock_send_data(self, buf)
 			local loop = self.loop
 			self.io_write:stop(loop)
 			-- no data to write, so stop timer.
-			self.write_timer:stop(loop)
+			if self.write_timer then
+				self.write_timer:stop(loop)
+			end
 		end
 	elseif is_blocked then
 		-- reset write timeout, since some data was written and the socket is still write blocked.
