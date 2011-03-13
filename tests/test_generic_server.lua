@@ -81,7 +81,7 @@ handle_error = function(self, err)
 	remove_client(self)
 end,
 handle_connected = function(self)
-	print('new client connected:', self.id)
+	self.sock:send('Hello from server\n')
 end,
 handle_data = function(self, data)
 	broadcast('msg from: client.' .. tostring(self.id) .. ':', data)
