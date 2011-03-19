@@ -29,7 +29,7 @@ local function handle_msg(sock, data)
   print("server response:\n", unpack(data))
 end
 
--- create PAIR worker
+-- create REQ worker
 local zreq = ctx:req(handle_msg)
 
 zreq:identity("<req>")

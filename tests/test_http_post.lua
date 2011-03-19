@@ -37,7 +37,9 @@ end
 
 local function on_data(req, resp, data)
 	print('---- start response body')
-	io.write(data)
+	if data then
+		io.write(data)
+	end
 	print('---- end response body')
 end
 
@@ -46,12 +48,13 @@ local function on_finished(req, resp)
 	loop:unloop()
 end
 
-local post_data = [[
-this is a test
-]]
+local post_url = arg[1] or 'http://localhost/'
+
+local post_data = arg[2] or "this is a test"
 
 local req = client:request{
 	method = 'POST',
+	url = post_url,
 	host = 'localhost',
 	path = '/',
 	body = post_data,
