@@ -95,7 +95,7 @@ function parse_query(query, values)
 	query = query or ''
 	values = values or {}
 	-- parse name/value pairs
-	for k,v in query:gmatch('([^=]+)=([^&]+)&?') do
+	for k,v in query:gmatch('([^=]+)=([^&]*)&?') do
 		values[k] = v
 	end
 	return values
