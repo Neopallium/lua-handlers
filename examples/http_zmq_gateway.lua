@@ -18,6 +18,8 @@
 -- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 -- THE SOFTWARE.
 
+local tconcat = table.concat
+
 local httpserver = require'handler.http.server'
 local ev = require'ev'
 local loop = ev.Loop.default
@@ -32,29 +34,57 @@ end
 
 local http_uri, zmq_uri = arg[1], arg[2]
 
-local function new_http_post_request(req, resp)
-	-- define ZMQ response handler
-	local function zmq_on_msg(sock, data)
-		if type(data) ~= 'table' then
-			data = { data }
-		end
-	  print("zmq response:\n", unpack(data))
-		-- separate each part of a multi-part message with '|'
-		local resp_data = table.concat(data, '|')
-		print('---- request finished, send response')
-		resp:set_status(200)
-		resp:set_header('Content-Type', 'application/octet-stream')
-		resp:set_header('Content-Length', #resp_data)
-		resp:set_body(resp_data)
-		resp:send()
+local client_requests = {}
+local next_id = 0
+
+-- define ZMQ response handler
+local function zmq_on_msg(sock, data)
+	if type(data) ~= 'table' then
+		print('INVALID: Response from ZMQ backend:', data)
+		return
 	end
+	-- get req_id from message.
+	local req_id = data[1]
+	-- validate message envelope
+	if req_id:match("^<req_") == nil or data[2] ~= '' then
+		print('INVALID: Message envelope :', req_id, data[2])
+		return
+	end
+	-- get http response object for this request.
+	local resp = client_requests[req_id]
+	if resp == nil then
+		-- client timed out.
+		print('HTTP client connect closed: ', req_id)
+		return
+	end
+  print("zmq response:\n", unpack(data))
+	-- separate each part of a multi-part message with '\n'
+	local resp_data = tconcat(data, '\n', 3)
+	print('---- request finished, send response')
+	resp:set_status(200)
+	resp:set_header('Content-Type', 'application/octet-stream')
+	resp:set_header('Content-Length', #resp_data)
+	resp:set_body(resp_data)
+	resp:send()
+	-- remove response object from queue.
+	client_requests[req_id] = nil
+end
 
-	-- create REQ worker
-	local zreq = ctx:req(zmq_on_msg)
+-- create XREQ worker
+local zxreq = ctx:xreq(zmq_on_msg)
 
-	--zreq:identity("<req>")
-	zreq:connect(zmq_uri)
+zxreq:identity("<http-zmq-gateway>")
+zxreq:connect(zmq_uri)
 
+local function new_http_post_request(req, resp)
+	-- create a new client request id
+	-- TODO: use smaller req_id values and re-use old ids.
+	local req_id = '<req_' .. tostring(next_id) .. '>'
+	next_id = next_id + 1
+
+	-- add http response object to 'client_requests' queue.
+	client_requests[req_id] = resp
+	
 	local post_data = ''
 	local function http_on_data(req, resp, data)
 		if data then
@@ -65,23 +95,21 @@ local function new_http_post_request(req, resp)
 	local function http_on_finished(req, resp)
 		print('---- start request body')
 		print(post_data)
-		zreq:send(post_data)
+		zxreq:send({ req_id, "", post_data })
 		print('---- end request body')
 	end
 
-	local function http_on_error(resp, err)
-		zreq:close()
-	end
-	local function http_on_response_sent(resp)
-		zreq:close()
+	local function http_on_close(resp, err)
+		print('---- http_on_close')
+		client_requests[req_id] = nil
 	end
 
 	-- add callbacks to request.
 	req.on_data = http_on_data
 	req.on_finished = http_on_finished
-	req.on_error = http_on_error
+	req.on_error = http_on_close -- cleanup on in-complete request
 	-- add response callbacks.
-	resp.on_response_sent = http_on_response_sent
+	resp.on_error = http_on_close -- cleanup on request abort
 end
 
 local function on_request(server, req, resp)
