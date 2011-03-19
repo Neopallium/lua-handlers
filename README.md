@@ -7,7 +7,7 @@ Provides a set of async. callback based handlers for working with raw TCP/UDP so
 Socket connect/listen URI's
 ---------------------------
 
-Different types of sockets can now be created from URI strings like `tcp://localhost:1234/` or `tls:/localhost:443/?key=tests/localhost.key&cert=tests/localhost.cert`.  URI's can be used for connecting sockets or listening sockets.
+Different types of sockets can now be created from URI strings like `tcp://localhost:1234/` or `tls:/localhost:443/?key=examples/localhost.key&cert=examples/localhost.cert`.  URI's can be used for connecting sockets or listening sockets.
 
 ### TCP sockets
 
@@ -88,18 +88,18 @@ Example generic socket server & client
 The generic server can listen on any number of sockets with different types.  The clients read stdin and send each line to the server which then re-sends the message to all connected clients.
 
 Start generic socket server:
-	lua tests/test_generic_server.lua tcp://127.0.0.1:1080/ "tls://127.0.0.1:4433/?key=tests/localhost.key&cert=tests/localhost.cert" tcp://[::1]:1082/ unix:///tmp/test.sock?backlog=1234 udp6://localhost:2053
+	lua examples/generic_chat_server.lua tcp://127.0.0.1:1080/ "tls://127.0.0.1:4433/?key=examples/localhost.key&cert=examples/localhost.cert" tcp://[::1]:1082/ unix:///tmp/test.sock?backlog=1234 udp6://localhost:2053
 
 Start generic socket client:
-	lua tests/test_generic_client.lua tcp://localhost:1080
+	lua examples/generic_chat_client.lua tcp://localhost:1080
 	-- or
-	lua tests/test_generic_client.lua udp6://localhost:2053
+	lua examples/generic_chat_client.lua udp6://localhost:2053
 	-- or
-	lua tests/test_generic_client.lua tls://127.0.0.1:4433/
+	lua examples/generic_chat_client.lua tls://127.0.0.1:4433/
 	-- or
-	lua tests/test_generic_client.lua tcp://[::1]:1082/
+	lua examples/generic_chat_client.lua tcp://[::1]:1082/
 	-- or
-	lua tests/test_generic_client.lua unix:///tmp/test.sock
+	lua examples/generic_chat_client.lua unix:///tmp/test.sock
 
 Installing
 ----------

@@ -64,8 +64,8 @@ local function new_server(port, handler, tls)
 end
 
 local port = arg[1] or 4081
-local key = arg[2] or 'tests/localhost.key'
-local cert = arg[3] or 'tests/localhost.cert'
+local key = arg[2] or 'examples/localhost.key'
+local cert = arg[3] or 'examples/localhost.cert'
 
 -- create server-side TLS Context.
 local tls = nixio.tls'server'
