@@ -73,7 +73,7 @@ end
 -- create XREQ worker
 local zxreq = ctx:xreq(zmq_on_msg)
 
-zxreq:identity("<http-zmq-gateway>")
+zxreq:identity("<http-zmq-proxy>")
 zxreq:connect(zmq_uri)
 
 local function new_http_post_request(req, resp)
