@@ -135,6 +135,13 @@ local function conn_raise_error(self, err)
 		-- then signal an error (i.e. failed to write the whole response)
 		call_callback(resp, 'on_error', resp.req, err)
 	end
+	-- raise error on all pending responses.
+	local queue = self.response_queue
+	for i=1,#queue do
+		resp = queue[i]
+		-- then signal an error (i.e. connection closed/timed out)
+		call_callback(resp, 'on_error', resp.req, err)
+	end
 end
 
 local function conn_set_next_timeout(self, timeout, reason)
@@ -151,9 +158,7 @@ local function conn_set_next_timeout(self, timeout, reason)
 end
 
 function conn_mt:handle_error(err)
-	if err ~= 'closed' then
-		conn_raise_error(self, err)
-	end
+	conn_raise_error(self, err)
 	-- close connection on all errors.
 	self:close()
 end
@@ -360,6 +365,12 @@ function conn_mt:response_complete()
 	-- check if the connection is closing.
 	if self.need_close then
 		self:close()
+		return
+	end
+	-- if no pending responses
+	if #queue == 0 then
+		-- then start keep-alive idle timeout
+		conn_set_next_timeout(self, self.keep_alive_timeout, "keep-alive timeout")
 	end
 end
 
@@ -472,8 +483,8 @@ local function create_request_parser(self)
 			end
 			error(abort_http_parse, 0) -- end http parsing, drop all other queued http events.
 		end
-		-- start keep-alive idle timeout
-		conn_set_next_timeout(self, self.keep_alive_timeout, "Idle timeout")
+		-- cancel last timeout
+		conn_set_next_timeout(self, -1)
 	end
 
 	parser = lhp.request(self)
@@ -505,26 +516,12 @@ function new(server, sock)
 
 	-- create connection timer.
 	self.timer = ev.Timer.new(function()
-		local reason = self.timeout_reason
-		if reason then
-			-- raise error only if there is a timeout reason.
-			conn_raise_error(self, reason)
-		end
+		-- disable timer
+		self.timer:stop(self.loop)
+		-- raise error with timeout reason.
+		conn_raise_error(self, self.timeout_reason or 'timeout')
 		-- shutdown http connection
-		if #self.response_queue == 0 then
-			-- completely close connection is there is no pending responses.
-			self:close()
-		else
-			-- only shutdown read side where there are pending resposnes.
-			local sock = self.sock
-			if sock then
-				-- shutdown reads, but not writes.
-				self.sock:shutdown(true, false)
-			end
-			-- if the headers for last response haven't been sent, then tell the client
-			-- that the connection is being closed after that response.
-			self.need_close = true
-		end
+		self:close()
 	end, 1, 1)
 
 	create_request_parser(self)
