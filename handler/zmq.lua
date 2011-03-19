@@ -136,6 +136,8 @@ local function zsock_send_data(self, data, more)
 	if not more and self.state == "SEND_ONLY" then
 		-- sent whole message, switch to receiving state
 		self.state = "RECV_ONLY"
+		-- make sure the idle callback is started
+		zsock_enable_idle(self, true)
 	end
 	return true
 end
@@ -245,7 +247,6 @@ local function zsock_receive_data(self)
 	self.recv_enabled = true
 	-- make sure idle watcher is running.
 	zsock_enable_idle(self, true)
-
 end
 
 local function zsock_dispatch_events(self)
@@ -260,7 +261,7 @@ local function zsock_dispatch_events(self)
 		writeable = true
 	elseif events == z_POLLIN then
 		readable = true
-	elseif events == z_POLLOUT then
+	elseif events == z_POLLOUT and self.need_send then
 		writeable = true
 	else
 		-- no events read block until next read event.
@@ -305,8 +306,8 @@ local function zsock_send(self, data, more)
 			-- try sending message
 			while zsock_send_data(self, data[i], true) do
 				i = i + 1
-				-- we only sent the first (parts-1) parts of the message here.
-				if i < parts then
+				-- send last part of the message with the value from 'more'
+				if i == parts then
 					-- try sending last part of message
 					if zsock_send_data(self, data[i], more) then
 						return true, nil
@@ -425,15 +426,12 @@ local function zsock_wrap(s, s_type, loop, msg_cb, err_cb)
 	local idle_cb = function()
 		-- dispatch events.
 		zsock_dispatch_events(self)
-		--[[
-		if not self.need_send and not self.recv_enabled then
-			zsock_enable_idle(self, false)
-		end
-		--]]
 	end
 	-- this Idle watcher is used to convert ZeroMQ FD's edge-triggered fashion to level-triggered
 	self.io_idle = ev.Idle.new(idle_cb)
-	zsock_enable_idle(self, true)
+	if self.state == nil or self.state == 'RECV_ONLY' then
+		zsock_enable_idle(self, true)
+	end
 
 	return self
 end
