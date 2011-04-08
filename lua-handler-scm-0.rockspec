@@ -21,7 +21,9 @@ build	= {
 		lua = {
 			['handler.acceptor'] = "handler/acceptor.lua",
 			['handler.connection']  = "handler/connection.lua",
+			['handler.connection.tls_backend']  = "handler/connection/tls_backend.lua",
 			['handler.datagram']  = "handler/datagram.lua",
+			['handler.uri']  = "handler/uri.lua",
 		}
 	}
 }
