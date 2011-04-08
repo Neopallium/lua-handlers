@@ -52,12 +52,23 @@ local function new_generic_client(uri)
 end
 
 local uri = arg[1] or 'tcp://localhost:8081/'
-local client = new_generic_client(uri)
+local count = tonumber(arg[2] or 1)
+local clients = {}
+
+for i=1,count do
+	clients[i] = new_generic_client(uri)
+end
+
+local function client_send(...)
+	for i=1,count do
+		clients[i]:send(...)
+	end
+end
 
 local function io_in_cb()
 	local line = io.read("*l")
 	if line and #line > 0 then
-		client:send(line)
+		client_send(line)
 	end
 end
 io_in = ev.IO.new(io_in_cb, 0, ev.READ)
