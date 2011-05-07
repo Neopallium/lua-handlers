@@ -82,6 +82,23 @@ Different types of sockets can now be created from URI strings like `tcp://local
 	udp6://localhost:53
 
 
+Set local address & port when connecting
+----------------------------------------
+
+Sockets can be bound to a local address & port before connecting to the remote host:port.  For connecting URIs add parameters `laddr=<local address>&lport=<local port>`.
+
+Examples:
+
+	-- connect tcp socket to host www.google.com on port 80 and bind the socket to local address 192.168.0.1
+	tcp://www.google.com/?laddr=192.168.0.1
+	
+	-- connect tcp socket to host www.google.com on port 80 and bind the socket to local address 192.168.0.1 and local port 16384
+	tcp://www.google.com/?laddr=192.168.0.1&lport=16384
+	
+	-- connect udp socket to 10.0.0.10 on port 53 and bind to local address 10.100.100.1 and port 2053
+	udp://10.0.0.10:53/?laddr=10.100.100.1&lport=2053
+
+
 Example generic socket server & client
 --------------------------------------
 

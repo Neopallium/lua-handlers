@@ -33,6 +33,10 @@ local uri_mod = require"handler.uri"
 local uri_parse = uri_mod.parse
 local query_parse = uri_mod.parse_query
 
+local function n_assert(test, errno, msg)
+	return assert(test, msg)
+end
+
 -- important errors
 local EINPROGRESS = nixio.const.EINPROGRESS
 
@@ -378,11 +382,16 @@ local function sock_wrap(loop, handler, sock, is_connected)
 	return self
 end
 
-local function sock_new_connect(loop, handler, domain, _type, host, port)
+local function sock_new_connect(loop, handler, domain, _type, host, port, laddr, lport)
 	-- create nixio socket
 	local sock = new_socket(domain, _type)
 	-- wrap socket
 	local self = sock_wrap(loop, handler, sock)
+	-- bind to local laddr/lport
+	if laddr then
+		n_assert(sock:setsockopt('socket', 'reuseaddr', 1))
+		n_assert(sock:bind(laddr, tonumber(lport or 0)))
+	end
 	-- connect to host:port
 	local ret, errno, err = sock:connect(host, port)
 	if not ret and errno ~= EINPROGRESS then
@@ -393,40 +402,44 @@ local function sock_new_connect(loop, handler, domain, _type, host, port)
 	return self
 end
 
+-- remove '[]' from IPv6 addresses
+local function strip_ipv6(ip6)
+	if ip6 and ip6:sub(1,1) == '[' then
+		return ip6:sub(2,-2)
+	end
+	return ip6
+end
+
 module(...)
 
 --
 -- TCP/UDP/Unix sockets (non-tls)
 --
-function tcp6(loop, handler, host, port)
-	-- remove '[]' from IPv6 addresses
-	if host:sub(1,1) == '[' then
-		host = host:sub(2,-2)
-	end
-	return sock_new_connect(loop, handler, 'inet6', 'stream', host, port)
+function tcp6(loop, handler, host, port, laddr, lport)
+	host = strip_ipv6(host)
+	laddr = strip_ipv6(laddr)
+	return sock_new_connect(loop, handler, 'inet6', 'stream', host, port, laddr, lport)
 end
 
-function tcp(loop, handler, host, port)
+function tcp(loop, handler, host, port, laddr, lport)
 	if host:sub(1,1) == '[' then
-		return tcp6(loop, handler, host, port)
+		return tcp6(loop, handler, host, port, laddr, lport)
 	else
-		return sock_new_connect(loop, handler, 'inet', 'stream', host, port)
+		return sock_new_connect(loop, handler, 'inet', 'stream', host, port, laddr, lport)
 	end
 end
 
-function udp6(loop, handler, host, port)
-	-- remove '[]' from IPv6 addresses
-	if host:sub(1,1) == '[' then
-		host = host:sub(2,-2)
-	end
-	return sock_new_connect(loop, handler, 'inet6', 'dgram', host, port)
+function udp6(loop, handler, host, port, laddr, lport)
+	host = strip_ipv6(host)
+	laddr = strip_ipv6(laddr)
+	return sock_new_connect(loop, handler, 'inet6', 'dgram', host, port, laddr, lport)
 end
 
-function udp(loop, handler, host, port)
+function udp(loop, handler, host, port, laddr, lport)
 	if host:sub(1,1) == '[' then
-		return udp6(loop, handler, host, port)
+		return udp6(loop, handler, host, port, laddr, lport)
 	else
-		return sock_new_connect(loop, handler, 'inet', 'dgram', host, port)
+		return sock_new_connect(loop, handler, 'inet', 'dgram', host, port, laddr, lport)
 	end
 end
 
@@ -442,15 +455,15 @@ end
 --
 -- TCP TLS sockets
 --
-function tls_tcp(loop, handler, host, port, tls, is_client)
-	local self = tcp(loop, handler, host, port)
+function tls_tcp(loop, handler, host, port, tls, is_client, laddr, lport)
+	local self = tcp(loop, handler, host, port, laddr, lport)
 	-- default to client-side TLS
 	if is_client == nil then is_client = true end
 	return sock_tls_wrap(self, tls, is_client)
 end
 
-function tls_tcp6(loop, handler, host, port, tls, is_client)
-	local self = tcp6(loop, handler, host, port)
+function tls_tcp6(loop, handler, host, port, tls, is_client, laddr, lport)
+	local self = tcp6(loop, handler, host, port, laddr, lport)
 	-- default to client-side TLS
 	if is_client == nil then is_client = true end
 	return sock_tls_wrap(self, tls, is_client)
@@ -480,13 +493,13 @@ function uri(loop, handler, uri)
 	else
 		local host, port = uri.host, uri.port or default_port
 		if scheme == 'tcp' then
-			return tcp(loop, handler, host, port)
+			return tcp(loop, handler, host, port, q.laddr, q.lport)
 		elseif scheme == 'tcp6' then
-			return tcp6(loop, handler, host, port)
+			return tcp6(loop, handler, host, port, q.laddr, q.lport)
 		elseif scheme == 'udp' then
-			return udp(loop, handler, host, port)
+			return udp(loop, handler, host, port, q.laddr, q.lport)
 		elseif scheme == 'udp6' then
-			return udp6(loop, handler, host, port)
+			return udp6(loop, handler, host, port, q.laddr, q.lport)
 		else
 			local mode = q.mode or 'client'
 			local is_client = (mode == 'client')
@@ -506,9 +519,9 @@ function uri(loop, handler, uri)
 				tls:set_ciphers(q.ciphers)
 			end
 			if scheme == 'tls' then
-				return tls_tcp(loop, handler, host, port, tls, is_client)
+				return tls_tcp(loop, handler, host, port, tls, is_client, q.laddr, q.lport)
 			elseif scheme == 'tls6' then
-				return tls_tcp6(loop, handler, host, port, tls, is_client)
+				return tls_tcp6(loop, handler, host, port, tls, is_client, q.laddr, q.lport)
 			end
 		end
 	end
