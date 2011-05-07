@@ -98,8 +98,8 @@ generic_client_mt.__index = generic_client_mt
 -- new generic client
 local function new_generic_client(sock)
 	local self = setmetatable({}, generic_client_mt)
-	sock:sethandler(self)
 	self.sock = sock
+	sock:sethandler(self)
 
 	-- create timer watcher
 	self.timer = ev.Timer.new(function()
