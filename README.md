@@ -154,6 +154,7 @@ Dependencies
 
 * [Lua-ev](https://github.com/brimworks/lua-ev)
 * [Lua-http-parser](https://github.com/brimworks/lua-http-parser)
+* [LuaSocket](http://w3.impa.br/~diego/software/luasocket/), needed for the ltn12 sub-module.
 
 ### Dependencies for optional lua-handler-zmq package:
 

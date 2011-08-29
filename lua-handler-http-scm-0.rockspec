@@ -14,6 +14,7 @@ description	= {
 dependencies = {
 	'lua-handler',
 	'lua-http-parser',
+	'luasocket',
 }
 build	= {
 	type		= 'none',
