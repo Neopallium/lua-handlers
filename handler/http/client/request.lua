@@ -105,13 +105,12 @@ function new(client, req, body)
 			return nil, "Invalid request URL: " .. tostring(url)
 		end
 		-- parse url
-		uri_parse(url, req) -- parsed parts of url are saved into the 'req' table.
+		uri_parse(url, req, true) -- parsed parts of url are saved into the 'req' table.
 	else
-		req.scheme = req.scheme or 'http'
 		req.path = req.path or '/'
 	end
 	-- validate scheme
-	local scheme = req.scheme
+	local scheme = req.scheme or 'http'
 	local default_port
 	scheme = scheme:lower()
 	if scheme == 'http' then
