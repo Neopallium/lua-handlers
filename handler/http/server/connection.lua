@@ -401,18 +401,6 @@ local function create_request_parser(self)
 		req.url = url
 	end
 
-	function self.on_path(path)
-		req.path = path
-	end
-
-	function self.on_query_string(query_string)
-		req.query_string = query_string
-	end
-
-	function self.on_fragment(fragment)
-		req.fragment = fragment
-	end
-
 	function self.on_header(header, val)
 		headers[header] = val
 	end
