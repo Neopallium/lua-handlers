@@ -92,6 +92,10 @@ function parse(uri, info, path_only)
 		-- uri has no authority the rest of the uri is the path.
 		info.path = uri:sub(off)
 	end
+	-- check for zero-length path
+	if #info.path == 0 then
+		info.path = "/"
+	end
 	-- return parsed uri
 	return info
 end
