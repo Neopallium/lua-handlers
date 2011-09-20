@@ -46,16 +46,16 @@ function host_mt:remove_connection(dead)
 	-- remove dead connection from pool
 	remove_connection(self.connections, dead)
 	remove_connection(self.idle, dead)
-	-- if we have no more connections to this host
-	if #self.connections == 0 then
-		-- then remove this host from the cache of host objects.
-		self.cache:remove_host(self)
-	end
 	-- check for queued requests
 	local req = tremove(self.requests, 1) -- pop requests in the order they where queued
 	if req then
 		-- re-process request to create a new connection (since we are now below the max limit).
 		return self:queue_request(req)
+	end
+	-- if we have no more connections to this host
+	if #self.connections == 0 then
+		-- then remove this host from the cache of host objects.
+		self.cache:remove_host(self)
 	end
 end
 

@@ -46,18 +46,26 @@ end
 local client_mt = {}
 client_mt.__index = client_mt
 
+local function pool_remove(self)
+	local pool = self.pool
+	-- remove connection from the pool.
+	if pool then
+		pool:remove_connection(self)
+	end
+end
+
 function client_mt:close()
 	local sock = self.sock
 	if sock then
 		self.sock = nil
-		return sock:close()
+		sock:close()
 	end
+	pool_remove(self)
 end
 
 function client_mt:handle_error(err)
 	local req = self.cur_req
 	local resp = self.resp
-	local pool = self.pool
 	-- flush http-parser
 	self:handle_data('')
 	-- close connection on all errors.
@@ -65,6 +73,7 @@ function client_mt:handle_error(err)
 	if req then
 		-- if connection was closed before we received a response
 		if not resp then
+			local pool = self.pool
 			-- then re-queue request in a new connection.
 			if pool then
 				pool:retry_request(req, true)
@@ -76,10 +85,7 @@ function client_mt:handle_error(err)
 			call_callback(req, 'on_error', resp, err)
 		end
 	end
-	-- remove connection from the pool.
-	if pool then
-		pool:remove_connection(self)
-	end
+	pool_remove(self)
 end
 
 function client_mt:handle_connected()
