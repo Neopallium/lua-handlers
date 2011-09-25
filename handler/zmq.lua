@@ -27,6 +27,9 @@ local error = error
 local type = type
 
 local ev = require"ev"
+
+assert(ev.Idle,"handler.zmq requires a version of lua-ev > 1.3 that supports Idle watchers.")
+
 local zmq = require"zmq"
 local z_SUBSCRIBE = zmq.SUBSCRIBE
 local z_UNSUBSCRIBE = zmq.UNSUBSCRIBE
