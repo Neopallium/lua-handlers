@@ -70,16 +70,15 @@ local function sock_shutdown(self, read, write)
 end
 
 local function sock_close(self)
+	local sock = self.sock
+	if not sock then return end
 	self.is_closing = true
 	self.read_blocked = true
 	if not self.write_buf or self.has_error then
 		self.io_write:stop(self.loop)
 		self.io_read:stop(self.loop)
-		local sock = self.sock
-		if sock then
-			sock:close()
-			self.sock = nil
-		end
+		sock:close()
+		self.sock = nil
 	end
 end
 
@@ -266,8 +265,6 @@ local function sock_recv_data(self)
 		end
 		-- check if the other side shutdown there send stream
 		if #data == 0 then
-			-- socket object is closed.
-			self.sock = nil
 			-- report socket closed
 			sock_handle_error(self, 'closed')
 			return false, 'closed'
