@@ -57,7 +57,7 @@ end
 local function parse_path_query_fragment(uri, off)
 	local path, query, fragment
 	-- parse path
-	path, off = uri:match('([^?]*)()', off)
+	path, off = uri:match('([^?#]*)()', off)
 	-- parse query
 	if uri:sub(off, off) == '?' then
 		query, off = uri:match('([^#]*)()', off + 1)
