@@ -163,9 +163,6 @@ function conn_mt:handle_error(err)
 	self:close()
 end
 
-function conn_mt:handle_connected()
-end
-
 function conn_mt:handle_data(data)
 	local parser = self.parser
 	local execute = parser.execute
@@ -243,7 +240,7 @@ local function conn_send_response(self, resp)
 	self:preprocess_body()
 	-- check for 'Date' header.
 	local headers = resp.headers
-	if not headers.Date then
+	if not self.send_min_headers and not headers.Date then
 		headers.Date = self.server:get_cached_date()
 	end
 	-- Is the connection closing after this response?
@@ -284,7 +281,12 @@ function conn_mt:send_response(resp)
 		local queue = self.response_queue
 		-- if this response is at the to of the response queue, then send it now.
 		if queue[1] == resp then
-			tremove(queue, 1) -- pop it from the queue first.
+				-- pop it from the queue first.
+			if #queue == 1 then
+				queue[1] = nil
+			else
+				tremove(queue, 1)
+			end
 			return conn_send_response(self, resp)
 		end
 	end
@@ -306,7 +308,7 @@ function conn_mt:preprocess_body()
 	local body_type = resp.body_type
 	local src
 	if body_type == 'string' then
-		src = ltn12.source.string(body)
+		src = body
 	elseif body_type == 'object' then
 		src = body:get_source()
 	else
@@ -316,17 +318,26 @@ function conn_mt:preprocess_body()
 
 	-- if no Content-Length, then use chunked transfer encoding.
 	if not resp.headers['Content-Length'] then
-		resp.headers['Transfer-Encoding'] = 'chunked'
-		-- add chunked filter.
-		src = chunked(src)
+		if body_type ~= 'string' then
+			resp.headers['Transfer-Encoding'] = 'chunked'
+			-- add chunked filter.
+			src = chunked(src)
+		else
+			resp.headers['Content-Length'] = #src
+		end
 	end
 
 	self.body_src = src
+	self.body_type = body_type
 end
 
 function conn_mt:send_body()
 	local body_src = self.body_src
 	local sock = self.sock
+	if self.body_type == 'string' then
+		sock:send(body_src)
+		return self:response_complete()
+	end
 	-- check if there is anything to send
 	if body_src == nil then return end
 
@@ -495,6 +506,7 @@ function new(server, sock)
 		write_timeout = write_timeout,
 		keep_alive_timeout = server.keep_alive_timeout or -1,
 		max_keep_alive_requests = server.max_keep_alive_requests or 0,
+		send_min_headers = server.send_min_headers or 0,
 	}, conn_mt)
 
 	-- enable write timeouts on connection.

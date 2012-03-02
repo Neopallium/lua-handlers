@@ -31,7 +31,7 @@ local acceptor = require"handler.acceptor"
 local headers = require"handler.http.headers"
 local headers_new = headers.new
 
-local connection = require"handler.http.server.connection"
+local connection = require"handler.http.server.hconnection"
 
 local error_handler = require"handler.http.server.error_handler"
 
@@ -176,8 +176,10 @@ function new(loop, self)
 	end
 
 	-- set Server header
-	self.headers['Server'] =
-		self.headers['Server'] or self.name or "Lua-Handler HTTPServer/0.1"
+	if self.name ~= '' then
+		self.headers['Server'] =
+			self.headers['Server'] or self.name or "Lua-Handler HTTPServer/0.1"
+	end
 
 	return setmetatable(self, server_mt)
 end
