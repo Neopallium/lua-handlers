@@ -32,7 +32,6 @@ handle_error = function(self, err)
 end,
 handle_connected = function(self)
 	print('tcp_client.connected')
-	self.sock:send('GET / HTTP/1.1\r\nHost: localhost:443\r\n\r\n')
 end,
 handle_data = function(self, data)
 	print('tcp_client.data:', data)
