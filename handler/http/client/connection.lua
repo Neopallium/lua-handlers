@@ -306,7 +306,7 @@ end
 
 module(...)
 
-function new(loop, pool)
+function new(pool)
 	local conn = setmetatable({
 		is_closed = false,
 		pool = pool,
@@ -318,9 +318,9 @@ function new(loop, pool)
 
 	local sock, err
 	if pool.is_https then
-		sock, err = connection.tls_tcp(loop, conn, pool.address, pool.port, tls, true)
+		sock, err = connection.tls_tcp(conn, pool.address, pool.port, tls, true)
 	else
-		sock, err = connection.tcp(loop, conn, pool.address, pool.port)
+		sock, err = connection.tcp(conn, pool.address, pool.port)
 	end
 	if sock == nil then return nil, err end
 	conn.sock = sock

@@ -28,7 +28,8 @@ local tinsert = table.insert
 
 local ltn12 = require"ltn12"
 
-local ev = require"ev"
+local handler = require"handler"
+local poll = handler.get_poller()
 
 local lhp = require"http.parser"
 
@@ -117,7 +118,7 @@ function conn_mt:close()
 	if sock then
 		self.sock = nil
 		-- kill timer.
-		self.timer:stop(self.loop)
+		self.timer:stop()
 		return sock:close()
 	end
 end
@@ -146,15 +147,23 @@ end
 
 local function conn_set_next_timeout(self, timeout, reason)
 	local timer = self.timer
-	local loop = self.loop
 	if timeout < 0 then
 		-- disable timer
-		timer:stop(loop)
+		timer:stop()
 		return
 	end
 	-- change timer's timeout and start it.
-	timer:again(loop, timeout)
+	timer:again(timeout)
 	self.timeout_reason = reason
+end
+
+function conn_mt:on_timer(timer)
+	-- disable timer
+	timer:stop()
+	-- raise error with timeout reason.
+	conn_raise_error(self, self.timeout_reason or 'timeout')
+	-- shutdown http connection
+	self:close()
 end
 
 function conn_mt:handle_error(err)
@@ -497,7 +506,6 @@ function new(server, sock)
 	local self = setmetatable({
 		sock = sock,
 		server = server,
-		loop = server.loop,
 		is_closed = false,
 		response_queue = {},
 		-- copy timeouts from server
@@ -515,14 +523,7 @@ function new(server, sock)
 	end
 
 	-- create connection timer.
-	self.timer = ev.Timer.new(function()
-		-- disable timer
-		self.timer:stop(self.loop)
-		-- raise error with timeout reason.
-		conn_raise_error(self, self.timeout_reason or 'timeout')
-		-- shutdown http connection
-		self:close()
-	end, 1, 1)
+	self.timer = poll:create_timer(self, 1, 1)
 
 	create_request_parser(self)
 

@@ -24,7 +24,8 @@ local assert = assert
 local date = os.date
 local floor = math.floor
 
-local ev = require"ev"
+local handler = require"handler"
+local poll = handler.get_poller()
 
 local acceptor = require"handler.acceptor"
 
@@ -50,7 +51,7 @@ end
 
 function server_mt:listen_unix(path, backlog)
 	assert(path, "You must provide a port/path.")
-	return self:add_acceptor(acceptor.unix(self.loop, self.accept_handler, path, backlog))
+	return self:add_acceptor(acceptor.unix(self.accept_handler, path, backlog))
 end
 
 local function check_port_addr(port, addr)
@@ -68,24 +69,24 @@ end
 
 function server_mt:listen(port, addr, backlog)
 	port, addr = check_port_addr(port, addr)
-	return self:add_acceptor(acceptor.tcp(self.loop, self.accept_handler, addr, port, backlog))
+	return self:add_acceptor(acceptor.tcp(self.accept_handler, addr, port, backlog))
 end
 
 function server_mt:listen6(port, addr, backlog)
 	port, addr = check_port_addr(port, addr)
-	return self:add_acceptor(acceptor.tcp6(self.loop, self.accept_handler, addr, port, backlog))
+	return self:add_acceptor(acceptor.tcp6(self.accept_handler, addr, port, backlog))
 end
 
 function server_mt:tls_listen(tls, port, addr, backlog)
 	port, addr = check_port_addr(port, addr)
 	return self:add_acceptor(
-		acceptor.tls_tcp(self.loop, self.accept_handler, addr, port, tls, backlog))
+		acceptor.tls_tcp(self.accept_handler, addr, port, tls, backlog))
 end
 
 function server_mt:tls_listen6(tls, port, addr, backlog)
 	port, addr = check_port_addr(port, addr)
 	return self:add_acceptor(
-		acceptor.tls_tcp6(self.loop, self.accept_handler, addr, port, tls, backlog))
+		acceptor.tls_tcp6(self.accept_handler, addr, port, tls, backlog))
 end
 
 function server_mt:listen_uri(uri, backlog)
@@ -97,7 +98,7 @@ function server_mt:listen_uri(uri, backlog)
 		port = 443 -- default port for https
 	end
 	return self:add_acceptor(
-		acceptor.uri(self.loop, self.accept_handler, uri, backlog, port))
+		acceptor.uri(self.accept_handler, uri, backlog, port))
 end
 
 local function server_update_cached_date(self, now)
@@ -110,11 +111,11 @@ local function server_update_cached_date(self, now)
 end
 
 function server_mt:update_cached_date()
-	return server_update_cached_date(self, self.loop:now())
+	return server_update_cached_date(self, poll:now())
 end
 
 function server_mt:get_cached_date()
-	local now = floor(self.loop:now())
+	local now = floor(poll:now())
 	if self.cached_now ~= now then
 		return server_update_cached_date(self, now)
 	end
@@ -129,10 +130,9 @@ local function default_on_check_continue(self, req, resp)
 	return self:on_request(req, resp)
 end
 
-function new(loop, self)
+function new(self)
 	self = self or {}
 	self.acceptors = {}
-	self.loop = loop
 	-- default timeouts
 		-- maximum time to wait from the start of the request to the end of the headers.
 	self.request_head_timeout = self.request_head_timeout or 1.0
@@ -189,13 +189,13 @@ local default_server = nil
 function default()
 	if not default_server then
 		-- create a http server.
-		default_server = new(ev.Loop.default)
+		default_server = new()
 	end
 	return default_server
 end
 
 -- initialize default http server.
-function init(loop, server)
-	default_server = new(loop, server)
+function init(server)
+	default_server = new(server)
 end
 

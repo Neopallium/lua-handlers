@@ -29,8 +29,6 @@ local hosts = require"handler.http.client.hosts"
 local headers = require"handler.http.headers"
 local headers_new = headers.new
 
-local ev = require"ev"
-
 local client_mt = {}
 client_mt.__index = client_mt
 
@@ -57,9 +55,8 @@ end
 
 module(...)
 
-function new(loop, client)
+function new(client)
 	client = client or {}
-	client.loop = loop
 	client.hosts = hosts.new(client)
 	-- normalize http headers
 	client.headers = headers_new(client.headers)
@@ -76,13 +73,13 @@ local default_client = nil
 function default()
 	if not default_client then
 		-- create a http client.
-		default_client = new(ev.Loop.default)
+		default_client = new()
 	end
 	return default_client
 end
 
 -- initialize default http client.
-function init(loop, client)
-	default_client = new(loop, client)
+function init(client)
+	default_client = new(client)
 end
 

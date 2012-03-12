@@ -23,8 +23,6 @@ local print = print
 
 local nixio = require"nixio"
 
-local ev = require"ev"
-
 -- important SSL error codes
 local SSL_ERROR_SSL = 1
 local SSL_ERROR_WANT_READ = 2
@@ -34,6 +32,10 @@ local SSL_ERROR_SYSCALL = 5
 local SSL_ERROR_ZERO_RETURN = 6
 local SSL_ERROR_WANT_CONNECT = 7
 local SSL_ERROR_WANT_ACCEPT = 8
+
+local function sock_fileno(self)
+	return self.sock:fileno()
+end
 
 local function sock_setsockopt(self, level, option, value)
 	return self.sock:setsockopt(level, option, value)
@@ -54,15 +56,14 @@ end
 local function sock_shutdown(self, read, write)
 	if read then
 		-- stop reading from socket, we don't want any more data.
-		self.io_read:stop(self.loop)
+		poll:file_read(self, false)
 	end
 end
 
 local function sock_close(self)
 	self.is_closing = true
 	if not self.write_buf or self.has_error then
-		self.io_write:stop(self.loop)
-		self.io_read:stop(self.loop)
+		poll:file_del(self)
 		self.sock:shutdown()
 	end
 end
@@ -71,11 +72,7 @@ local function sock_block_read(self, block)
 	-- block/unblock read
 	if block ~= self.read_blocked then
 		self.read_blocked = block
-		if block then
-			self.io_read:stop(self.loop)
-		else
-			self.io_read:start(self.loop)
-		end
+		poll:file_read(self, not block)
 	end
 end
 
@@ -97,6 +94,10 @@ local function sock_handle_error(self, err, errno)
 	end
 end
 
+local function sock_on_timer(self, timer)
+	sock_handle_error(self, 'write timeout')
+end
+
 local function sock_set_write_timeout(self, timeout)
 	local timer = self.write_timer
 	-- default to no write timeout.
@@ -108,20 +109,18 @@ local function sock_set_write_timeout(self, timeout)
 	if not timer then
 		-- don't create a disabled timer.
 		if is_disable then return end
-		timer = ev.Timer.new(function()
-			sock_handle_error(self, 'write timeout')
-		end, timeout, timeout)
+		timer = poll:create_timer(self, timeout, timeout)
 		self.write_timer = timer
 		-- enable timer if socket is write blocked.
 		if self.write_blocked then
-			timer:start(self.loop)
+			timer:start()
 		end
 		return
 	end
 	-- if the timer should be disabled.
 	if is_disable then
 		-- then disable the timer
-		timer:stop(self.loop)
+		timer:stop()
 		return
 	end
 	-- update timeout interval and start the timer if socket is write blocked.
@@ -175,16 +174,15 @@ local function sock_send_data(self, buf)
 		self.write_blocked = is_blocked
 		if is_blocked then
 			self.write_buf = buf
-			self.io_write:start(self.loop)
+			poll:file_write(self, true)
 			-- socket is write blocked, start write timeout
 			sock_reset_write_timeout(self)
 			return num, 'blocked'
 		else
-			local loop = self.loop
-			self.io_write:stop(loop)
+			poll:file_write(self, false)
 			-- no data to write, so stop timer.
 			if self.write_timer then
-				self.write_timer:stop(loop)
+				self.write_timer:stop()
 			end
 		end
 	elseif is_blocked then
@@ -307,6 +305,7 @@ end
 local tls_sock_mt = {
 is_tls = true,
 send = sock_send,
+fileno = sock_fileno,
 getsockopt = sock_getsockopt,
 setsockopt = sock_setsockopt,
 getsockname = sock_getsockname,
@@ -314,6 +313,7 @@ getpeername = sock_getpeername,
 shutdown = sock_shutdown,
 close = sock_close,
 block_read = sock_block_read,
+on_timer = sock_on_timer,
 set_write_timeout = sock_set_write_timeout,
 sethandler = sock_sethandler,
 is_closed = sock_is_closed,
@@ -321,7 +321,6 @@ is_closed = sock_is_closed,
 tls_sock_mt.__index = tls_sock_mt
 
 local function sock_tls_wrap(self, tls, is_client)
-	local loop = self.loop
 	-- create TLS context
 	tls = tls or nixio.tls(is_client and 'client' or 'server')
 	-- convertion normal socket to TLS
@@ -329,7 +328,7 @@ local function sock_tls_wrap(self, tls, is_client)
 	self.sock = tls:create(self.sock)
 
 	-- create callback closure
-	local write_cb = function()
+	local write_cb = function(self)
 		local num, err = sock_send_data(self, self.write_buf)
 		if self.write_buf == nil and not self.is_closed then
 			-- write buffer is empty and socket is still open,
@@ -345,7 +344,7 @@ local function sock_tls_wrap(self, tls, is_client)
 			end
 		end
 	end
-	local read_cb = function()
+	local read_cb = function(self)
 		sock_recv_data(self)
 	end
 
@@ -354,14 +353,14 @@ local function sock_tls_wrap(self, tls, is_client)
 	-- block writes until handshake is completed, to force queueing of sent data.
 	self.write_blocked = true
 	self.read_blocked = false -- no need to block reads.
-	local handshake_cb = function()
+	local handshake_cb = function(self)
 		local is_handshake_complete, code = sock_handshake(self, is_client)
 		if is_handshake_complete then
 			self.write_blocked = false
-			self.io_write:stop(loop)
+			poll:file_write(self, false)
 			-- install normal read/write callbacks
-			self.io_write:callback(write_cb)
-			self.io_read:callback(read_cb)
+			self.on_io_write = write_cb
+			self.on_io_read = read_cb
 			-- check if we where in the connecting state.
 			if self.is_connecting then
 				sock_handle_connected(self)
@@ -373,22 +372,22 @@ local function sock_tls_wrap(self, tls, is_client)
 			end
 		else
 			if code == SSL_ERROR_WANT_WRITE then
-				self.io_write:start(loop)
+				poll:file_write(self, true)
 			elseif code == SSL_ERROR_WANT_READ then
-				self.io_write:stop(loop)
+				poll:file_write(self, false)
 			else
 				-- report error
 				sock_handle_error(self, "SSL_Error: code=" .. code)
 			end
 		end
 	end
-	self.io_write:callback(handshake_cb)
-	self.io_read:callback(handshake_cb)
+	self.on_io_write = handshake_cb
+	self.on_io_read = handshake_cb
 	-- start TLS handshake
 	handshake_cb()
 
 	-- always keep read events enabled.
-	self.io_read:start(loop)
+	poll:file_read(self, true)
 
 	return self
 end

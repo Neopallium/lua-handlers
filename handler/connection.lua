@@ -1,20 +1,20 @@
 
 local require = require
 local pcall = pcall
+local print = print
 
-local backends = {
-	"llnet",
-	"nixio",
-}
+local handler = require"handler"
+local backend = handler.get_backend()
 
 local mod_name = ...
+local system = mod_name:match("%.(%w+)$")
 
-for i=1,#backends do
-	local name = mod_name .. '.' .. backends[i] .. '_backend'
-	local status, mod = pcall(require, name)
-	if status then
-		print("--------- Loaded backend:", name)
-		return mod
-	end
+local name = mod_name .. '.' .. backend[system] .. '_backend'
+local status, mod = pcall(require, name)
+if status then
+	return mod
+else
+	print("----- error loading " .. system .. " backend:", name, mod)
 end
 
+error("FAILED TO LOAD backend for: " .. system)

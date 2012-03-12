@@ -22,7 +22,8 @@ local setmetatable = setmetatable
 local print = print
 local assert = assert
 
-local ev = require"ev"
+local handler = require"handler"
+local poll = handler.get_poller()
 
 local llnet = require"llnet"
 local get_opt = llnet.GetSocketOption
@@ -99,6 +100,10 @@ local function make_addr(host, port)
 	return tmp_addr
 end
 
+local function sock_fileno(self)
+	return self.sock:fileno()
+end
+
 local function sock_setsockopt(self, level, option, value)
 	local opts = Levels[level]
 	local name = opts[option]
@@ -137,7 +142,7 @@ local function sock_shutdown(self, read, write)
 	end
 	if read then
 		-- stop reading from socket, we don't want any more data.
-		self.io_read:stop(self.loop)
+		poll:file_read(self, false)
 	end
 	return self.sock:shutdown(how)
 end
@@ -148,8 +153,7 @@ local function sock_close(self)
 	self.is_closing = true
 	self.read_blocked = true
 	if not self.write_buf or self.has_error then
-		self.io_write:stop(self.loop)
-		self.io_read:stop(self.loop)
+		poll:file_del(self)
 		sock:close()
 		self.sock = nil
 	end
@@ -159,11 +163,7 @@ local function sock_block_read(self, block)
 	-- block/unblock read
 	if block ~= self.read_blocked then
 		self.read_blocked = block
-		if block then
-			self.io_read:stop(self.loop)
-		else
-			self.io_read:start(self.loop)
-		end
+		poll:file_read(self, not block)
 	end
 end
 
@@ -181,6 +181,10 @@ local function sock_handle_error(self, err)
 	end
 end
 
+local function sock_on_timer(self, timer)
+	sock_handle_error(self, 'write timeout')
+end
+
 local function sock_set_write_timeout(self, timeout)
 	local timer = self.write_timer
 	-- default to no write timeout.
@@ -192,20 +196,18 @@ local function sock_set_write_timeout(self, timeout)
 	if not timer then
 		-- don't create a disabled timer.
 		if is_disable then return end
-		timer = ev.Timer.new(function()
-			sock_handle_error(self, 'write timeout')
-		end, timeout, timeout)
+		timer = poll:create_timer(self, timeout, timeout)
 		self.write_timer = timer
 		-- enable timer if socket is write blocked.
 		if self.write_blocked then
-			timer:start(self.loop)
+			timer:start()
 		end
 		return
 	end
 	-- if the timer should be disabled.
 	if is_disable then
 		-- then disable the timer
-		timer:stop(self.loop)
+		timer:stop()
 		return
 	end
 	-- update timeout interval and start the timer if socket is write blocked.
@@ -259,16 +261,15 @@ local function sock_send_data(self, buf)
 		self.write_blocked = is_blocked
 		if is_blocked then
 			self.write_buf = buf
-			self.io_write:start(self.loop)
+			poll:file_write(self, true)
 			-- socket is write blocked, start write timeout
 			sock_reset_write_timeout(self)
 			return num, 'blocked'
 		else
-			local loop = self.loop
-			self.io_write:stop(loop)
+			poll:file_write(self, false)
 			-- no data to write, so stop timer.
 			if self.write_timer then
-				self.write_timer:stop(loop)
+				self.write_timer:stop()
 			end
 		end
 	elseif is_blocked then
@@ -375,6 +376,7 @@ end
 local sock_mt = {
 is_tls = false,
 send = sock_send,
+fileno = sock_fileno,
 getsockopt = sock_getsockopt,
 setsockopt = sock_setsockopt,
 getsockname = sock_getsockname,
@@ -382,16 +384,16 @@ getpeername = sock_getpeername,
 shutdown = sock_shutdown,
 close = sock_close,
 block_read = sock_block_read,
+on_timer = sock_on_timer,
 set_write_timeout = sock_set_write_timeout,
 sethandler = sock_sethandler,
 is_closed = sock_is_closed,
 }
 sock_mt.__index = sock_mt
 
-local function sock_wrap(loop, handler, sock, is_connected)
+local function sock_wrap(handler, sock, is_connected)
 	-- create socket object
 	local self = {
-		loop = loop,
 		handler = handler,
 		sock = sock,
 		is_connecting = true,
@@ -431,34 +433,33 @@ local function sock_wrap(loop, handler, sock, is_connected)
 
 	-- create IO watchers.
 	if is_connected then
-		self.io_write = ev.IO.new(write_cb, fd, ev.WRITE)
+		self.on_io_write = write_cb
 		self.is_connecting = false
 	else
-		local connected_cb = function(loop, io, revents)
+		self.on_io_write = function()
 			if not self.write_blocked then
-				io:stop(loop)
+				poll:file_write(self, false)
 			end
 			-- change callback to write_cb
-			io:callback(write_cb)
+			self.on_io_write = write_cb
 			-- check for connect errors by tring to read from the socket.
 			sock_recv_data(self)
 		end
-		self.io_write = ev.IO.new(connected_cb, fd, ev.WRITE)
-		self.io_write:start(loop)
+		poll:file_write(self, true)
 	end
-	self.io_read = ev.IO.new(read_cb, fd, ev.READ)
-	self.io_read:start(loop)
+	self.on_io_read = read_cb
+	poll:file_read(self, true)
 
 	return self
 end
 
-local function sock_new_connect(loop, handler, domain, stype, host, port, laddr, lport)
+local function sock_new_connect(handler, domain, stype, host, port, laddr, lport)
 	-- create socket
 	domain = Families[domain or 'inet']
 	stype = Sock_types[stype or 'stream']
 	local sock = new_socket(domain, stype)
 	-- wrap socket
-	local self = sock_wrap(loop, handler, sock)
+	local self = sock_wrap(handler, sock)
 	-- bind to local laddr/lport
 	if laddr then
 		assert(set_opt.SO_REUSEADDR(sock, 1))
@@ -487,66 +488,66 @@ module(...)
 --
 -- TCP/UDP/Unix sockets (non-tls)
 --
-function tcp6(loop, handler, host, port, laddr, lport)
+function tcp6(handler, host, port, laddr, lport)
 	host = strip_ipv6(host)
 	laddr = strip_ipv6(laddr)
-	return sock_new_connect(loop, handler, 'inet6', 'stream', host, port, laddr, lport)
+	return sock_new_connect(handler, 'inet6', 'stream', host, port, laddr, lport)
 end
 
-function tcp(loop, handler, host, port, laddr, lport)
+function tcp(handler, host, port, laddr, lport)
 	if host:sub(1,1) == '[' then
-		return tcp6(loop, handler, host, port, laddr, lport)
+		return tcp6(handler, host, port, laddr, lport)
 	else
-		return sock_new_connect(loop, handler, 'inet', 'stream', host, port, laddr, lport)
+		return sock_new_connect(handler, 'inet', 'stream', host, port, laddr, lport)
 	end
 end
 
-function udp6(loop, handler, host, port, laddr, lport)
+function udp6(handler, host, port, laddr, lport)
 	host = strip_ipv6(host)
 	laddr = strip_ipv6(laddr)
-	return sock_new_connect(loop, handler, 'inet6', 'dgram', host, port, laddr, lport)
+	return sock_new_connect(handler, 'inet6', 'dgram', host, port, laddr, lport)
 end
 
-function udp(loop, handler, host, port, laddr, lport)
+function udp(handler, host, port, laddr, lport)
 	if host:sub(1,1) == '[' then
-		return udp6(loop, handler, host, port, laddr, lport)
+		return udp6(handler, host, port, laddr, lport)
 	else
-		return sock_new_connect(loop, handler, 'inet', 'dgram', host, port, laddr, lport)
+		return sock_new_connect(handler, 'inet', 'dgram', host, port, laddr, lport)
 	end
 end
 
-function unix(loop, handler, path)
-	return sock_new_connect(loop, handler, 'unix', 'stream', path)
+function unix(handler, path)
+	return sock_new_connect(handler, 'unix', 'stream', path)
 end
 
-function wrap_connected(loop, handler, sock)
+function wrap_connected(handler, sock)
 	-- wrap socket
-	return sock_wrap(loop, handler, sock, true)
+	return sock_wrap(handler, sock, true)
 end
 
 --
 -- TCP TLS sockets
 --
-function tls_tcp(loop, handler, host, port, tls, is_client, laddr, lport)
+function tls_tcp(handler, host, port, tls, is_client, laddr, lport)
 	error("Not implemented!")
-	local self = tcp(loop, handler, host, port, laddr, lport)
+	local self = tcp(handler, host, port, laddr, lport)
 	-- default to client-side TLS
 	if is_client == nil then is_client = true end
 	return sock_tls_wrap(self, tls, is_client)
 end
 
-function tls_tcp6(loop, handler, host, port, tls, is_client, laddr, lport)
+function tls_tcp6(handler, host, port, tls, is_client, laddr, lport)
 	error("Not implemented!")
-	local self = tcp6(loop, handler, host, port, laddr, lport)
+	local self = tcp6(handler, host, port, laddr, lport)
 	-- default to client-side TLS
 	if is_client == nil then is_client = true end
 	return sock_tls_wrap(self, tls, is_client)
 end
 
-function tls_wrap_connected(loop, handler, sock, tls, is_client)
+function tls_wrap_connected(handler, sock, tls, is_client)
 	error("Not implemented!")
 	-- wrap socket
-	local self = sock_wrap(loop, handler, sock, false)
+	local self = sock_wrap(handler, sock, false)
 	-- default to server-side TLS
 	if is_client == nil then is_client = false end
 	return sock_tls_wrap(self, tls, is_client)
@@ -555,7 +556,7 @@ end
 --
 -- URI
 --
-function uri(loop, handler, uri)
+function uri(handler, uri)
 	local orig_uri = uri
 	-- parse uri
 	uri = uri_parse(uri)
@@ -564,17 +565,17 @@ function uri(loop, handler, uri)
 	local q = query_parse(uri.query)
 	-- use scheme to select socket type.
 	if scheme == 'unix' then
-		return unix(loop, handler, uri.path)
+		return unix(handler, uri.path)
 	else
 		local host, port = uri.host, uri.port or default_port
 		if scheme == 'tcp' then
-			return tcp(loop, handler, host, port, q.laddr, q.lport)
+			return tcp(handler, host, port, q.laddr, q.lport)
 		elseif scheme == 'tcp6' then
-			return tcp6(loop, handler, host, port, q.laddr, q.lport)
+			return tcp6(handler, host, port, q.laddr, q.lport)
 		elseif scheme == 'udp' then
-			return udp(loop, handler, host, port, q.laddr, q.lport)
+			return udp(handler, host, port, q.laddr, q.lport)
 		elseif scheme == 'udp6' then
-			return udp6(loop, handler, host, port, q.laddr, q.lport)
+			return udp6(handler, host, port, q.laddr, q.lport)
 		else
 			local mode = q.mode or 'client'
 			local is_client = (mode == 'client')
@@ -595,9 +596,9 @@ function uri(loop, handler, uri)
 				tls:set_ciphers(q.ciphers)
 			end
 			if scheme == 'tls' then
-				return tls_tcp(loop, handler, host, port, tls, is_client, q.laddr, q.lport)
+				return tls_tcp(handler, host, port, tls, is_client, q.laddr, q.lport)
 			elseif scheme == 'tls6' then
-				return tls_tcp6(loop, handler, host, port, tls, is_client, q.laddr, q.lport)
+				return tls_tcp6(handler, host, port, tls, is_client, q.laddr, q.lport)
 			end
 		end
 	end

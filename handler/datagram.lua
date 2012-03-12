@@ -22,7 +22,9 @@ local setmetatable = setmetatable
 local print = print
 local assert = assert
 
-local ev = require"ev"
+local handler = require"handler"
+local poll = handler.get_poller()
+
 local nixio = require"nixio"
 local new_socket = nixio.socket
 
@@ -51,8 +53,12 @@ local function dgram_getpeername(self)
 end
 
 local function dgram_close(self)
-	self.io_read:stop(self.loop)
+	poll:file_del(self)
 	self.sock:close()
+end
+
+local function dgram_fileno(self)
+	return self.sock:fileno()
 end
 
 local function dgram_handle_error(self, err)
@@ -120,13 +126,13 @@ setsockname = dgram_setsockname,
 getpeername = dgram_getpeername,
 setpeername = dgram_setpeername,
 close = dgram_close,
+fileno = dgram_fileno,
 }
 dgram_mt.__index = dgram_mt
 
-local function dgram_wrap(loop, handler, sock)
+local function dgram_wrap(handler, sock)
 	-- create udp socket object
 	local self = {
-		loop = loop,
 		handler = handler,
 		sock = sock,
 		max_packet = 8192,
@@ -143,21 +149,20 @@ local function dgram_wrap(loop, handler, sock)
 	local read_cb = function()
 		dgram_recvfrom_data(self)
 	end
-	-- create IO watcher.
-	self.io_read = ev.IO.new(read_cb, fd, ev.READ)
-
-	self.io_read:start(loop)
+	-- enable read events.
+	self.on_io_read = read_cb
+	poll:file_read(self, true)
 
 	return self
 end
 
-local function dgram_new_bind(loop, handler, domain, host, port)
+local function dgram_new_bind(handler, domain, host, port)
 	-- nixio uses nil to mena any local address
 	if host == '*' then host = nil end
 	-- create nixio socket
 	local sock = new_socket(domain, 'dgram')
 	-- wrap socket
-	local self = dgram_wrap(loop, handler, sock)
+	local self = dgram_wrap(handler, sock)
 	-- connect to host:port
 	local ret, errno, err = sock:bind(host, port)
 	if not ret then
@@ -170,18 +175,18 @@ end
 
 module(...)
 
-function udp(loop, handler, host, port)
-	return dgram_new_bind(loop, handler, 'inet', host, port)
+function udp(handler, host, port)
+	return dgram_new_bind(handler, 'inet', host, port)
 end
 
 -- default datagram type to udp.
 new = udp
 
-function udp6(loop, handler, host, port)
-	return dgram_new_bind(loop, handler, 'inet6', host, port)
+function udp6(handler, host, port)
+	return dgram_new_bind(handler, 'inet6', host, port)
 end
 
-function unix(loop, handler, path)
-	return dgram_new_bind(loop, handler, 'unix', path)
+function unix(handler, path)
+	return dgram_new_bind(handler, 'unix', path)
 end
 

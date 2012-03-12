@@ -105,7 +105,7 @@ function host_mt:queue_request(req)
 		end
 		-- no pooled connection, create a new connection.
 		local err
-		conn, err = httpconnection(self.client.loop, self)
+		conn, err = httpconnection(self.client, self)
 		if conn == nil then return false, err end
 		tinsert(self.connections, conn)
 	end

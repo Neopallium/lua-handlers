@@ -24,7 +24,8 @@ local assert = assert
 local tostring = tostring
 local tonumber = tonumber
 
-local ev = require"ev"
+local handler = require"handler"
+local poll = handler.get_poller()
 
 local nixio = require"nixio"
 local new_socket = nixio.socket
@@ -47,13 +48,16 @@ set_accept_max = function(self, max)
 	self.accept_max = max
 end,
 close = function(self)
-	self.io:stop(self.loop)
+	poll:file_del(self)
 	self.server:close()
+end,
+fileno = function(self)
+	return self.server:fileno()
 end,
 }
 acceptor_mt.__index = acceptor_mt
 
-local function sock_new_bind_listen(loop, handler, domain, _type, host, port, tls, backlog)
+local function sock_new_bind_listen(handler, domain, _type, host, port, tls, backlog)
 	local is_dgram = (_type == 'dgram')
 	-- nixio uses nil to mean any local address.
 	if host == '*' then host = nil end
@@ -64,7 +68,6 @@ local function sock_new_bind_listen(loop, handler, domain, _type, host, port, tl
 
 	-- create acceptor
 	local self = {
-		loop = loop,
 		handler = handler,
 		server = server,
 		host = host,
@@ -110,7 +113,7 @@ local function sock_new_bind_listen(loop, handler, domain, _type, host, port, tl
 						-- connect dupped socket to client's ip:port
 						n_assert(sock:connect(c_ip, c_port))
 						-- wrap nixio socket
-						sock = wrap_connected(loop, nil, sock)
+						sock = wrap_connected(nil, sock)
 						udp_clients[c_key] = sock
 						-- pass client socket to new connection handler.
 						if handler(sock) == nil then
@@ -143,9 +146,9 @@ local function sock_new_bind_listen(loop, handler, domain, _type, host, port, tl
 				else
 					-- wrap nixio socket
 					if tls then
-						sock = tls_wrap_connected(loop, nil, sock, tls)
+						sock = tls_wrap_connected(nil, sock, tls)
 					else
-						sock = wrap_connected(loop, nil, sock)
+						sock = wrap_connected(nil, sock)
 					end
 					if handler(sock) == nil then
 						-- connect handler returned nil, maybe they are rejecting connections.
@@ -156,11 +159,9 @@ local function sock_new_bind_listen(loop, handler, domain, _type, host, port, tl
 			until count >= max
 		end
 	end
-	-- create IO watcher.
-	local fd = server:fileno()
-	self.io = ev.IO.new(accept_cb, fd, ev.READ)
-
-	self.io:start(loop)
+	-- enable read events
+	self.on_io_read = accept_cb
+	poll:file_read(self, true)
 
 	-- allow the address to be re-used.
 	n_assert(server:setsockopt('socket', 'reuseaddr', 1))
@@ -176,55 +177,55 @@ end
 
 module(...)
 
-function tcp6(loop, handler, host, port, backlog)
+function tcp6(handler, host, port, backlog)
 	-- remove '[]' from IPv6 addresses
 	if host:sub(1,1) == '[' then
 		host = host:sub(2,-2)
 	end
-	return sock_new_bind_listen(loop, handler, 'inet6', 'stream', host, port, nil, backlog)
+	return sock_new_bind_listen(handler, 'inet6', 'stream', host, port, nil, backlog)
 end
 
-function tcp(loop, handler, host, port, backlog)
+function tcp(handler, host, port, backlog)
 	if host:sub(1,1) == '[' then
-		return tcp6(loop, handler, host, port, backlog)
+		return tcp6(handler, host, port, backlog)
 	else
-		return sock_new_bind_listen(loop, handler, 'inet', 'stream', host, port, nil, backlog)
+		return sock_new_bind_listen(handler, 'inet', 'stream', host, port, nil, backlog)
 	end
 end
 
-function tls_tcp6(loop, handler, host, port, tls, backlog)
+function tls_tcp6(handler, host, port, tls, backlog)
 	-- remove '[]' from IPv6 addresses
 	if host:sub(1,1) == '[' then
 		host = host:sub(2,-2)
 	end
-	return sock_new_bind_listen(loop, handler, 'inet6', 'stream', host, port, tls, backlog)
+	return sock_new_bind_listen(handler, 'inet6', 'stream', host, port, tls, backlog)
 end
 
-function tls_tcp(loop, handler, host, port, tls, backlog)
+function tls_tcp(handler, host, port, tls, backlog)
 	if host:sub(1,1) == '[' then
-		return tls_tcp6(loop, handler, host, port, tls, backlog)
+		return tls_tcp6(handler, host, port, tls, backlog)
 	else
-		return sock_new_bind_listen(loop, handler, 'inet', 'stream', host, port, tls, backlog)
+		return sock_new_bind_listen(handler, 'inet', 'stream', host, port, tls, backlog)
 	end
 end
 
-function udp6(loop, handler, host, port, backlog)
+function udp6(handler, host, port, backlog)
 	-- remove '[]' from IPv6 addresses
 	if host:sub(1,1) == '[' then
 		host = host:sub(2,-2)
 	end
-	return sock_new_bind_listen(loop, handler, 'inet6', 'dgram', host, port, nil, backlog)
+	return sock_new_bind_listen(handler, 'inet6', 'dgram', host, port, nil, backlog)
 end
 
-function udp(loop, handler, host, port, backlog)
+function udp(handler, host, port, backlog)
 	if host:sub(1,1) == '[' then
-		return udp6(loop, handler, host, port, backlog)
+		return udp6(handler, host, port, backlog)
 	else
-		return sock_new_bind_listen(loop, handler, 'inet', 'dgram', host, port, nil, backlog)
+		return sock_new_bind_listen(handler, 'inet', 'dgram', host, port, nil, backlog)
 	end
 end
 
-function unix(loop, handler, path, backlog)
+function unix(handler, path, backlog)
 	-- check if socket already exists.
 	local stat, errno, err = nixio.fs.lstat(path)
 	if stat then
@@ -234,10 +235,10 @@ function unix(loop, handler, path, backlog)
 			print('Warning failed to delete old Unix domain socket: ', err)
 		end
 	end
-	return sock_new_bind_listen(loop, handler, 'unix', 'stream', path, nil, nil, backlog)
+	return sock_new_bind_listen(handler, 'unix', 'stream', path, nil, nil, backlog)
 end
 
-function uri(loop, handler, uri, backlog, default_port)
+function uri(handler, uri, backlog, default_port)
 	local orig_uri = uri
 	-- parse uri
 	uri = uri_parse(uri)
@@ -250,17 +251,17 @@ function uri(loop, handler, uri, backlog, default_port)
 	end
 	-- use scheme to select socket type.
 	if scheme == 'unix' then
-		return unix(loop, handler, uri.path, backlog)
+		return unix(handler, uri.path, backlog)
 	else
 		local host, port = uri.host, uri.port or default_port
 		if scheme == 'tcp' then
-			return tcp(loop, handler, host, port, backlog)
+			return tcp(handler, host, port, backlog)
 		elseif scheme == 'tcp6' then
-			return tcp6(loop, handler, host, port, backlog)
+			return tcp6(handler, host, port, backlog)
 		elseif scheme == 'udp' then
-			return udp(loop, handler, host, port, backlog)
+			return udp(handler, host, port, backlog)
 		elseif scheme == 'udp6' then
-			return udp6(loop, handler, host, port, backlog)
+			return udp6(handler, host, port, backlog)
 		else
 			-- create TLS context
 			local tls = nixio.tls(q.mode or 'server') -- default to server-side
@@ -277,9 +278,9 @@ function uri(loop, handler, uri, backlog, default_port)
 				tls:set_ciphers(q.ciphers)
 			end
 			if scheme == 'tls' then
-				return tls_tcp(loop, handler, host, port, tls, backlog)
+				return tls_tcp(handler, host, port, tls, backlog)
 			elseif scheme == 'tls6' then
-				return tls_tcp6(loop, handler, host, port, tls, backlog)
+				return tls_tcp6(handler, host, port, tls, backlog)
 			end
 		end
 	end
