@@ -20,6 +20,7 @@
 
 local setmetatable = setmetatable
 local print = print
+local error = error
 local assert = assert
 local tostring = tostring
 local tonumber = tonumber
@@ -150,7 +151,7 @@ local function sock_new_bind_listen(handler, domain, stype, host, port, tls, bac
 			repeat
 				local sock, err = server:accept()
 				if not sock then
-					if sock ~= false then
+					if err ~= 'EAGAIN' then
 						print('stream_accept.error:', err)
 					end
 					break
