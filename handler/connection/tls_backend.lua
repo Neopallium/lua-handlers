@@ -23,6 +23,9 @@ local print = print
 
 local nixio = require"nixio"
 
+local handler = require"handler"
+local poll = handler.get_poller()
+
 -- important SSL error codes
 local SSL_ERROR_SSL = 1
 local SSL_ERROR_WANT_READ = 2
@@ -34,7 +37,7 @@ local SSL_ERROR_WANT_CONNECT = 7
 local SSL_ERROR_WANT_ACCEPT = 8
 
 local function sock_fileno(self)
-	return self.sock:fileno()
+	return self.fd
 end
 
 local function sock_setsockopt(self, level, option, value)
@@ -325,6 +328,7 @@ local function sock_tls_wrap(self, tls, is_client)
 	tls = tls or nixio.tls(is_client and 'client' or 'server')
 	-- convertion normal socket to TLS
 	setmetatable(self, tls_sock_mt)
+	self.fd = self.sock:fileno()
 	self.sock = tls:create(self.sock)
 
 	-- create callback closure
@@ -384,7 +388,7 @@ local function sock_tls_wrap(self, tls, is_client)
 	self.on_io_write = handshake_cb
 	self.on_io_read = handshake_cb
 	-- start TLS handshake
-	handshake_cb()
+	handshake_cb(self)
 
 	-- always keep read events enabled.
 	poll:file_read(self, true)
