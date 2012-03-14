@@ -176,8 +176,9 @@ local function sock_new_bind_listen(handler, domain, stype, host, port, tls, bac
 	poll:file_read(self, true)
 
 	-- allow the address to be re-used.
-	assert(set_opt.SO_REUSEADDR(server, 1))
-	assert(set_opt.TCP_DEFER_ACCEPT(server, 1))
+	set_opt.SO_REUSEADDR(server, 1)
+	-- defer accept until data or timeout.
+	set_opt.TCP_DEFER_ACCEPT(server, 1)
 	-- bind socket to local host:port
 	assert(server:bind(make_addr(host, port)))
 	if not is_dgram then
