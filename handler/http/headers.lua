@@ -84,14 +84,28 @@ local common_headers = {
 local normalized = {}
 for i=1,#common_headers do
 	local name = common_headers[i]
+	normalized[name] = name
 	normalized[name:lower()] = name
 end
+setmetatable(normalized, {
+__index = function(names, name)
+	-- search for normailized form of 'name'
+	local norm = name:lower()
+	-- if header name is already all lowercase, then just return it.
+	if norm == name then
+		-- no normalized form for this header name.
+		return name
+	end
+	-- get normalized header name.
+	return rawget(names, norm)
+end
+})
 
 local headers_mt = {}
 
 function headers_mt.__index(headers, name)
 	-- normalize header name
-	local norm = normalized[name:lower()]
+	local norm = normalized[name]
 	-- if normalized name is nil or the same as name
 	if norm == nil or norm == name then
 		-- then no value exists for this header.
@@ -103,8 +117,9 @@ end
 
 function headers_mt.__newindex(headers, name, value)
 	-- normalize header name
-	local norm = normalized[name:lower()] or name
+	local norm = normalized[name]
 	rawset(headers, norm, value)
+	rawset(headers, #headers + 1, norm)
 end
 
 module(...)
@@ -118,6 +133,7 @@ function new(headers)
 
 	-- normalize existing headers
 	if headers then
+		local idx = 0
 		for name,val in pairs(headers) do
 			-- get normalized name
 			local norm = normalized[name:lower()]
@@ -127,6 +143,8 @@ function new(headers)
 				headers[norm] = val
 				headers[name] = nil
 			end
+			idx = idx + 1
+			rawset(headers, idx, name)
 		end
 	else
 		headers = {}
@@ -138,7 +156,9 @@ end
 function dup(src)
 	local dst = new()
 	-- copy headers from src
-	for name,val in pairs(src) do
+	for i=1,#src do
+		local name = src[i]
+		local val = src[name]
 		dst[name] = val
 	end
 	return dst
@@ -151,7 +171,9 @@ function copy_defaults(dst, src)
 	-- make sure 'dst' is a headers object
 	dst = new(dst)
 	-- copy headers from src
-	for name,val in pairs(src) do
+	for i=1,#src do
+		local name = src[i]
+		local val = src[name]
 		if not dst[name] then
 			dst[name] = val
 		end
@@ -159,4 +181,22 @@ function copy_defaults(dst, src)
 	return dst
 end
 
+function gen_headers(data, headers)
+	local offset=#data
+	for i=1,#headers do
+		local name = headers[i]
+		local val = headers[name]
+		if val then
+			offset = offset + 1
+			data[offset] = name
+			offset = offset + 1
+			data[offset] = ": "
+			offset = offset + 1
+			data[offset] = val
+			offset = offset + 1
+			data[offset] = "\r\n"
+		end
+	end
+	return offset
+end
 

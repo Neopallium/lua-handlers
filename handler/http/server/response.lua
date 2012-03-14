@@ -74,6 +74,7 @@ function response_mt:send(status, headers)
 	if status then
 		self:set_status(status)
 	end
+	-- copy 'headers' into self.headers
 	if type(headers) == 'table' then
 		local resp_headers = self.headers
 		for key,value in pairs(headers) do

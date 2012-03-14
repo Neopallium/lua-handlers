@@ -40,6 +40,7 @@ local chunked = chunked.new
 
 local headers = require"handler.http.headers"
 local headers_new = headers.new
+local gen_headers = headers.gen_headers
 
 local request = require"handler.http.server.request"
 local new_request = request.new
@@ -200,21 +201,6 @@ end
 function conn_mt:handle_drain()
 	-- write buffer is empty, send more of the request body.
 	self:send_body()
-end
-
-local function gen_headers(data, headers)
-	local offset=#data
-	for k,v in pairs(headers) do
-		offset = offset + 1
-		data[offset] = k
-		offset = offset + 1
-		data[offset] = ": "
-		offset = offset + 1
-		data[offset] = v
-		offset = offset + 1
-		data[offset] = "\r\n"
-	end
-	return offset
 end
 
 -- create a place-holder continue response object.
