@@ -18,9 +18,8 @@
 -- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 -- THE SOFTWARE.
 
+local handler = require'handler'
 local connection = require'handler.connection'
-local ev = require'ev'
-local loop = ev.Loop.default
 
 local tcp_client_mt = {
 handle_error = function(self, err)
@@ -28,6 +27,7 @@ handle_error = function(self, err)
 end,
 handle_connected = function(self)
 	print('tcp_client.connected')
+	self.sock:send('hello')
 end,
 handle_data = function(self, data)
 	print('tcp_client.data:', data)
@@ -38,12 +38,12 @@ tcp_client_mt.__index = tcp_client_mt
 -- new tcp client
 local function new_tcp_client(host, port)
 	local self = setmetatable({}, tcp_client_mt)
-	self.sock = connection.tcp(loop, self, host, port)
+	self.sock = connection.tcp(self, host, port)
 	return self
 end
 
 local host, port = (arg[1] or 'localhost:8081'):match('^([^:]*):(.*)$')
 local client = new_tcp_client(host, port)
 
-loop:loop()
+handler.run()
 

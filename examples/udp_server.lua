@@ -18,14 +18,14 @@
 -- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 -- THE SOFTWARE.
 
+local handler = require'handler'
+local poll = handler.get_poller()
 local acceptor = require'handler.acceptor'
-local ev = require'ev'
-local loop = ev.Loop.default
 
 local udp_client_mt = {
 handle_error = function(self, err)
 	print('udp_client.error:', self, err)
-	self.timer:stop(loop)
+	self.timer:stop()
 end,
 handle_connected = function(self)
 	print('udp_client.connected:', self)
@@ -47,21 +47,19 @@ print('new_udp_client:', sock)
 	self.sock = sock
 
 	-- create timer watcher
-	self.timer = ev.Timer.new(function()
-		self:handle_timer()
-	end, 1.0, 1.0)
-	self.timer:start(loop)
+	self.timer = poll:create_timer(self, 1.0, 1.0)
+	self.timer:start()
 	return self
 end
 
 -- new udp server
 local function new_server(port, handler)
 	print('New udp server listen on: ' .. port)
-	return acceptor.udp(loop, handler, '*', port, 1024)
+	return acceptor.udp(handler, '*', port, 1024)
 end
 
 local port = arg[1] or 8081
 local server = new_server(port, new_udp_client)
 
-loop:loop()
+handler.run()
 

@@ -19,9 +19,9 @@
 -- THE SOFTWARE.
 
 local nixio = require'nixio'
+local handler = require'handler'
+handler.init{ backend = "nixio_ev" }
 local connection = require'handler.connection'
-local ev = require'ev'
-local loop = ev.Loop.default
 
 -- create client-side TLS context
 local tls = nixio.tls'client'
@@ -44,12 +44,12 @@ tcp_client_mt.__index = tcp_client_mt
 -- new tcp client
 local function new_tcp_client(host, port)
 	local self = setmetatable({}, tcp_client_mt)
-	self.sock = connection.tls_tcp(loop, self, host, port, tls)
+	self.sock = connection.tls_tcp(self, host, port, tls)
 	return self
 end
 
 local host, port = (arg[1] or 'localhost:4081'):match('^([^:]*):(.*)$')
 local client = new_tcp_client(host, port)
 
-loop:loop()
+handler.run()
 

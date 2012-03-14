@@ -18,9 +18,9 @@
 -- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 -- THE SOFTWARE.
 
+local handler = require'handler'
 local httpserver = require'handler.http.server'
-local ev = require'ev'
-local loop = ev.Loop.default
+
 local tremove = table.remove
 
 local function on_data(req, resp, data)
@@ -63,7 +63,7 @@ local function on_request(server, req, resp)
 	resp.on_response_sent = on_response_sent
 end
 
-local server = httpserver.new(loop,{
+local server = httpserver.new({
 	-- set HTTP Server's "name/version" string.
 	name = string.format("Test-HTTPServer/%f", math.pi),
 	-- new request callback.
@@ -87,5 +87,5 @@ if #arg < 1 then
 	server:listen_uri(default_uri)
 end
 
-loop:loop()
+handler.run()
 

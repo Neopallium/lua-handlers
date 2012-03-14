@@ -23,8 +23,8 @@ local tconcat = table.concat
 local print = print
 
 local acceptor = require'handler.acceptor'
-local ev = require'ev'
-local loop = ev.Loop.default
+local handler = require'handler'
+local poll = handler.get_poller()
 
 local max_id = 0
 local clients = {}
@@ -76,7 +76,7 @@ local generic_client_mt = {
 is_client = true,
 handle_error = function(self, err)
 	print('client error:', self.id, ':', err)
-	self.timer:stop(loop)
+	self.timer:stop()
 	-- remove client from list.
 	remove_client(self)
 end,
@@ -86,7 +86,7 @@ end,
 handle_data = function(self, data)
 	broadcast('msg from: client.' .. tostring(self.id) .. ':', data)
 end,
-handle_timer = function(self)
+on_timer = function(self)
 	self.sock:send('ping\n')
 end,
 send = function(self, msg)
@@ -102,10 +102,8 @@ local function new_generic_client(sock)
 	sock:sethandler(self)
 
 	-- create timer watcher
-	self.timer = ev.Timer.new(function()
-		self:handle_timer()
-	end, 2.0, 2.0)
-	self.timer:start(loop)
+	self.timer = poll:create_timer(self, 2.0, 2.0)
+	self.timer:start()
 
 	-- add client to list.
 	add_client(self)
@@ -115,7 +113,7 @@ end
 -- new generic server
 local function new_server(uri, handler)
 	print('New generic server listen on: ' .. uri)
-	servers[#servers + 1] = acceptor.uri(loop, handler, uri)
+	servers[#servers + 1] = acceptor.uri(handler, uri)
 end
 
 if #arg < 1 then
@@ -126,5 +124,5 @@ else
 	end
 end
 
-loop:loop()
+handler.run()
 

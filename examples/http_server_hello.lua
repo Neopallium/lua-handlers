@@ -18,11 +18,17 @@
 -- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 -- THE SOFTWARE.
 
+local backend = "llnet"
+
+if #arg >= 1 then
+	backend = arg[1]
+	print("Use backend:", backend)
+	table.remove(arg, 1)
+end
+
+local handler = require'handler'
+handler.init{ backend = backend }
 local httpserver = require'handler.http.server'
-local handler = require"handler"
-local poll = handler.init{}
---local ev = require"ev"
-local tremove = table.remove
 
 local cnt = 1
 local function on_finished(req, resp)
@@ -39,7 +45,7 @@ local function on_finished(req, resp)
 		print("GCed: mem=", collectgarbage"count")
 	end
 	--]]
-	--cnt = cnt + 1; if cnt >= 4000 then poll:stop() end
+	--cnt = cnt + 1; if cnt >= 40000 then os.exit(); handler.stop() end
 end
 
 local function on_request(server, req, resp)
@@ -76,8 +82,8 @@ end
 
 --local luatrace = require"luatrace"
 --luatrace.tron()
---print("poll:start():", pcall(function()
-poll:start()
+--print("handler.start():", pcall(function()
+handler.run()
 --end))
 --luatrace.troff()
 

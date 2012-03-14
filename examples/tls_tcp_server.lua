@@ -18,14 +18,15 @@
 -- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 -- THE SOFTWARE.
 
+local handler = require'handler'
+handler.init{ backend = "nixio_ev" }
+local poll = handler.get_poller()
 local acceptor = require'handler.acceptor'
-local ev = require'ev'
-local loop = ev.Loop.default
 
 local tcp_client_mt = {
 handle_error = function(self, err)
 	print('tcp_client.error:', self, err)
-	self.timer:stop(loop)
+	self.timer:stop()
 end,
 handle_connected = function(self)
 	print('tcp_client.connected:', self)
@@ -33,7 +34,7 @@ end,
 handle_data = function(self, data)
 	print('tcp_client.data:', self, data)
 end,
-handle_timer = function(self)
+on_timer = function(self)
 	self.sock:send('ping\n')
 end,
 }
@@ -46,10 +47,8 @@ print('new_tcp_client:', sock)
 	sock:sethandler(self)
 
 	-- create timer watcher
-	self.timer = ev.Timer.new(function()
-		self:handle_timer()
-	end, 1.0, 1.0)
-	self.timer:start(loop)
+	self.timer = poll:create_timer(self, 1.0, 1.0)
+	self.timer:start()
 	return self
 end
 
@@ -57,9 +56,9 @@ end
 local function new_server(port, handler, tls)
 	print('New tcp server listen on: ' .. port)
 	if tls then
-		return acceptor.tls_tcp(loop, handler, '*', port, tls, 1024)
+		return acceptor.tls_tcp(handler, '*', port, tls, 1024)
 	else
-		return acceptor.tcp(loop, handler, '*', port, 1024)
+		return acceptor.tcp(handler, '*', port, 1024)
 	end
 end
 
@@ -74,5 +73,5 @@ assert(tls:set_cert(cert))
 
 local server = new_server(port, new_tcp_client, tls)
 
-loop:loop()
+handler.run()
 

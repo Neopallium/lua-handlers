@@ -19,15 +19,15 @@
 -- THE SOFTWARE.
 
 local connection = require'handler.connection'
-local ev = require'ev'
-local loop = ev.Loop.default
+local handler = require'handler'
+local poll = handler.get_poller()
 
 local io_in
 
 local generic_client_mt = {
 handle_error = function(self, err)
 	print('client.error:', err)
-	io_in:stop(loop)
+	handler.stop()
 end,
 handle_connected = function(self)
 	print('client.connected: sending hello message to server')
@@ -47,7 +47,7 @@ generic_client_mt.__index = generic_client_mt
 local function new_generic_client(uri)
 	print('Connecting to: ' .. uri)
 	local self = setmetatable({ uri = uri }, generic_client_mt)
-	self.sock = connection.uri(loop, self, uri)
+	self.sock = connection.uri(self, uri)
 	return self
 end
 
@@ -65,14 +65,16 @@ local function client_send(...)
 	end
 end
 
-local function io_in_cb()
+local io_stdin = {
+on_io_read = function(self)
 	local line = io.read("*l")
 	if line and #line > 0 then
 		client_send(line)
 	end
-end
-io_in = ev.IO.new(io_in_cb, 0, ev.READ)
-io_in:start(loop)
+end,
+fileno = function() return 0 end,
+}
+poll:file_read(io_stdin, true)
 
-loop:loop()
+handler.run()
 

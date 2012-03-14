@@ -18,9 +18,9 @@
 -- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 -- THE SOFTWARE.
 
+local handler = require'handler'
+local poll = handler.get_poller()
 local connection = require'handler.connection'
-local ev = require'ev'
-local loop = ev.Loop.default
 
 local udp_client_mt = {
 handle_error = function(self, err)
@@ -42,7 +42,7 @@ udp_client_mt.__index = udp_client_mt
 -- new udp client
 local function new_udp_client(host, port)
 	local self = setmetatable({}, udp_client_mt)
-	self.sock = connection.udp(loop, self, host, port)
+	self.sock = connection.udp(self, host, port)
 	return self
 end
 
@@ -50,5 +50,5 @@ local host = arg[1] or "localhost"
 local port = arg[2] or 8081
 local client = new_udp_client(host, port)
 
-loop:loop()
+handler.run()
 
