@@ -31,22 +31,17 @@ nixio_ev = {
 
 local default
 
-default = backends.nixio
---default = backends.llnet
+--default = backends.nixio
+default = backends.llnet
 
 local backend
 local poller
+local is_initialized = false
 
 local mod_name = ...
 local _M = {}
 
--- set/get backend
-function _M.set_backend(name)
-	if backend then
-		error("Backend already set to: ", backend)
-	end
-	backend = backends[name]
-end
+-- get backend
 function _M.get_backend()
 	if not backend then
 		backend = default
@@ -58,6 +53,8 @@ end
 -- get poller
 function _M.get_poller()
 	if poller then return poller end
+	-- make sure handler is initialized.
+	_M.init()
 	-- create poller
 	local pmod = require(mod_name .. '.poller')
 	poller = pmod.new()
@@ -65,15 +62,27 @@ function _M.get_poller()
 end
 
 function _M.init(options)
+	if is_initialized then return end
+	is_initialized = true
 	options = options or {}
 	-- setup backend.
 	if options.backend then
-		_M.set_backend(options.backend)
+		backend = backends[options.backend]
 	else
 		-- use default backend
 		_M.get_backend()
 	end
 	return _M.get_poller()
+end
+
+function _M.run()
+	local poll = _M.get_poller()
+	return poll:start()
+end
+_M.start = _M.run
+
+function _M.stop()
+	return poller:stop()
 end
 
 return _M
