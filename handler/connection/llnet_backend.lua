@@ -312,7 +312,7 @@ local function sock_handle_connected(self)
 	end
 end
 
-local function sock_recv_data(self)
+local function sock_read_cb(self)
 	local read_len = self.read_len
 	local read_max = self.read_max
 	local handler = self.handler
@@ -391,6 +391,33 @@ is_closed = sock_is_closed,
 }
 sock_mt.__index = sock_mt
 
+local function sock_write_cb(self)
+	local num, err = sock_send_data(self, self.write_buf)
+	if self.write_buf == nil and not self.is_closed then
+		-- write buffer is empty and socket is still open,
+		-- call drain callback.
+		local handler = self.handler
+		local drain = handler.handle_drain
+		if drain then
+			local err = drain(handler)
+			if err then
+				-- report error
+				sock_handle_error(self, err)
+			end
+		end
+	end
+end
+
+local function sock_connected_cb(self)
+	if not self.write_blocked then
+		poll:file_write(self, false)
+	end
+	-- change callback to sock_write_cb
+	self.on_io_write = sock_write_cb
+	-- check for connect errors by tring to read from the socket.
+	return sock_read_cb(self)
+end
+
 local function sock_wrap(handler, sock, is_connected)
 	-- create socket object
 	local self = {
@@ -408,46 +435,16 @@ local function sock_wrap(handler, sock, is_connected)
 
 	-- make socket non-blocking
 	sock:set_nonblock(true)
-	-- get socket FD
-	local fd = sock:fileno()
-	-- create callback closure
-	local write_cb = function()
-		local num, err = sock_send_data(self, self.write_buf)
-		if self.write_buf == nil and not self.is_closed then
-			-- write buffer is empty and socket is still open,
-			-- call drain callback.
-			local handler = self.handler
-			local drain = handler.handle_drain
-			if drain then
-				local err = drain(handler)
-				if err then
-					-- report error
-					sock_handle_error(self, err)
-				end
-			end
-		end
-	end
-	local read_cb = function()
-		sock_recv_data(self)
-	end
 
 	-- create IO watchers.
 	if is_connected then
-		self.on_io_write = write_cb
+		self.on_io_write = sock_write_cb
 		self.is_connecting = false
 	else
-		self.on_io_write = function()
-			if not self.write_blocked then
-				poll:file_write(self, false)
-			end
-			-- change callback to write_cb
-			self.on_io_write = write_cb
-			-- check for connect errors by tring to read from the socket.
-			sock_recv_data(self)
-		end
+		self.on_io_write = sock_connected_cb
 		poll:file_write(self, true)
 	end
-	self.on_io_read = read_cb
+	self.on_io_read = sock_read_cb
 	poll:file_read(self, true)
 
 	return self
