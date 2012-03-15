@@ -312,51 +312,49 @@ local function sock_handle_connected(self)
 	end
 end
 
-local function sock_read_cb(self)
-	local read_len = self.read_len
-	local read_max = self.read_max
-	local handler = self.handler
-	local sock = self.sock
-	local len = 0
-	local is_connecting = self.is_connecting
-
-	repeat
-		local data, err = sock:recv(read_len, 0)
-		if not data then
-			if err == 'EAGAIN' then
-				-- check if we where in the connecting state.
-				if is_connecting then
-					is_connecting = false
-					sock_handle_connected(self)
-				end
-				-- no data
-				return true
-			else -- data == nil
-				-- report error
-				sock_handle_error(self, err)
-				return false, err
+local function sock_recv_data(self, chunk_len, bytes_read)
+	local data, err = self.sock:recv(chunk_len, 0)
+	if not data then
+		if err == 'EAGAIN' then
+			-- check if we where in the connecting state.
+			if self.is_connecting then
+				sock_handle_connected(self)
 			end
-		end
-		-- check if the other side shutdown there send stream
-		if #data == 0 then
-			-- report socket closed
-			sock_handle_error(self, 'closed')
-			return false, 'closed'
-		end
-		-- check if we where in the connecting state.
-		if is_connecting then
-			is_connecting = false
-			sock_handle_connected(self)
-		end
-		-- pass read data to handler
-		len = len + #data
-		err = handler:handle_data(data)
-		if err then
+			-- no data
+			return true
+		else -- data == nil
 			-- report error
 			sock_handle_error(self, err)
 			return false, err
 		end
-	until len < read_len or len >= read_max or self.read_blocked
+	end
+	-- check if the other side shutdown there send stream
+	local len = #data
+	if len == 0 then
+		-- report socket closed
+		sock_handle_error(self, 'closed')
+		return false, 'closed'
+	end
+	-- check if we where in the connecting state.
+	if self.is_connecting then
+		sock_handle_connected(self)
+	end
+	-- pass read data to handler
+	err = self.handler:handle_data(data)
+	if err then
+		-- report error
+		sock_handle_error(self, err)
+		return false, err
+	end
+
+	-- if we read a full chunk of data.
+	if len == chunk_len then
+		-- then try reading more data.
+		bytes_read = bytes_read + len
+		if bytes_read < self.read_max and not self.read_blocked then
+			return sock_recv_data(self, chunk_len, bytes_read)
+		end
+	end
 
 	return true
 end
@@ -390,6 +388,10 @@ sethandler = sock_sethandler,
 is_closed = sock_is_closed,
 }
 sock_mt.__index = sock_mt
+
+local function sock_read_cb(self)
+	return sock_recv_data(self, self.read_len, 0)
+end
 
 local function sock_write_cb(self)
 	local num, err = sock_send_data(self, self.write_buf)
