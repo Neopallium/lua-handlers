@@ -33,6 +33,9 @@ local connection = require"handler.connection"
 local chunked = require"handler.http.chunked"
 local chunked = chunked.new
 
+local headers = require"handler.http.headers"
+local gen_headers = headers.gen_headers
+
 local response = require"handler.http.client.response"
 local new_response = response.new
 
@@ -107,21 +110,6 @@ end
 function client_mt:handle_drain()
 	-- write buffer is empty, send more of the request body.
 	self:send_body()
-end
-
-local function gen_headers(data, headers)
-	local offset=#data
-	for k,v in pairs(headers) do
-		offset = offset + 1
-		data[offset] = k
-		offset = offset + 1
-		data[offset] = ": "
-		offset = offset + 1
-		data[offset] = v
-		offset = offset + 1
-		data[offset] = "\r\n"
-	end
-	return offset
 end
 
 function client_mt:queue_request(req)
