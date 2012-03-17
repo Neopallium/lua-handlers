@@ -40,7 +40,7 @@ local server_mt = {}
 server_mt.__index = server_mt
 
 function server_mt:new_connection(sock)
-	local conn = connection(self, sock)
+	return connection(self, sock)
 end
 
 function server_mt:add_acceptor(accept)
