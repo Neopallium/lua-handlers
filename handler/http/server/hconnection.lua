@@ -33,6 +33,8 @@ local poll = handler.get_poller()
 
 local lhp = require"http.parser"
 
+local lbuf = require"buf"
+
 local connection = require"handler.connection"
 
 local chunked = require"handler.http.chunked"
@@ -40,7 +42,7 @@ local chunked = chunked.new
 
 local headers = require"handler.http.headers"
 local headers_new = headers.new
-local gen_headers = headers.gen_headers
+local gen_headers_buf = headers.gen_headers_buf
 
 local request = require"handler.http.server.request"
 local new_request = request.new
@@ -206,6 +208,7 @@ end
 -- create a place-holder continue response object.
 local continue_resp = { _is_ready_to_send = true }
 
+local resp_tmp_buf = lbuf.new(8 * 1024)
 local function conn_send_response(self, resp)
 	-- check for '100 Continue' response marker.
 	if resp == continue_resp then
@@ -230,7 +233,12 @@ local function conn_send_response(self, resp)
 	else
 		status_code = http_status_codes[status] or (tostring(status))
 	end
-	local data = { http_version, " ", status_code, "\r\n" }
+	local buf = resp_tmp_buf
+	buf:reset() -- clear old data.
+	buf:append_data(http_version)
+	buf:append_data(" ")
+	buf:append_data(status_code)
+	buf:append_data("\r\n")
 	-- preprocess response body
 	self:preprocess_body()
 	-- check for 'Date' header.
@@ -243,12 +251,19 @@ local function conn_send_response(self, resp)
 		headers.Connection = 'close'
 	end
 	-- gen: Response-Headers
-	local offset = gen_headers(data, headers)
-	offset = offset + 1
+	gen_headers_buf(buf, headers)
 	-- end: Response-Headers
-	data[offset] = "\r\n"
-	-- send response.
-	self.sock:send(tconcat(data))
+	buf:append_data("\r\n")
+	local body_src = self.body_src
+	if self.body_type == 'string' then
+		-- send response headers and response body.
+		buf:append_data(body_src)
+		self.sock:send(buf:tostring())
+		return self:response_complete()
+	else
+		-- send just response headers
+		self.sock:send(buf:tostring())
+	end
 	-- send response body
 	self:send_body()
 end

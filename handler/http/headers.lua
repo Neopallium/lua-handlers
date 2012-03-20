@@ -25,6 +25,7 @@ local print = print
 local setmetatable = setmetatable
 local getmetatable = getmetatable
 local assert = assert
+local tostring = tostring
 
 local common_headers = {
 	"Accept",
@@ -198,5 +199,18 @@ function gen_headers(data, headers)
 		end
 	end
 	return offset
+end
+
+function gen_headers_buf(buf, headers)
+	for i=1,#headers do
+		local name = headers[i]
+		local val = headers[name]
+		if val then
+			buf:append_data(name)
+			buf:append_data(": ")
+			buf:append_data(tostring(val))
+			buf:append_data("\r\n")
+		end
+	end
 end
 
