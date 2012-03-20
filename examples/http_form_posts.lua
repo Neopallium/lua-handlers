@@ -18,14 +18,13 @@
 -- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 -- THE SOFTWARE.
 
+local handler = require'handler'
 local httpclient = require'handler.http.client'
 local form = require'handler.http.form'
 local file = require'handler.http.file'
-local ev = require'ev'
-local loop = ev.Loop.default
 local tremove = table.remove
 
-local client = httpclient.new(loop,{
+local client = httpclient.new({
 	user_agent = "HTTPClient tester"
 })
 
@@ -45,7 +44,7 @@ end
 
 local function on_finished(req, resp)
 	print('====================== Finished POST request =================')
-	loop:unloop()
+	handler.stop()
 end
 
 local post_data = form.new{
@@ -65,5 +64,5 @@ local req = client:request{
 	on_finished = on_finished,
 }
 
-loop:loop()
+handler.run()
 

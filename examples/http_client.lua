@@ -18,12 +18,11 @@
 -- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 -- THE SOFTWARE.
 
+local handler = require'handler'
 local httpclient = require'handler.http.client'
-local ev = require'ev'
-local loop = ev.Loop.default
 local tremove = table.remove
 
-local client = httpclient.new(loop,{
+local client = httpclient.new({
 	user_agent = "HTTPClient tester",
 })
 
@@ -69,7 +68,7 @@ local function next_url()
 			count = count - 1
 			if count == 0 then
 				-- finished processing urls
-				loop:unloop()
+				handler.stop()
 			else
 				next_url()
 			end
@@ -91,5 +90,5 @@ else
 	next_url()
 end
 
-loop:loop()
+handler.start()
 

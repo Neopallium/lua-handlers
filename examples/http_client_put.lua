@@ -18,14 +18,13 @@
 -- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 -- THE SOFTWARE.
 
+local handler = require'handler'
 local httpclient = require'handler.http.client'
-local ev = require'ev'
-local loop = ev.Loop.default
 local tremove = table.remove
 
 local ltn12 = require("ltn12")
 
-local client = httpclient.new(loop,{
+local client = httpclient.new({
 	user_agent = "HTTPClient tester"
 })
 
@@ -47,7 +46,7 @@ end
 
 local function on_finished(req, resp)
 	print('====================== Finished PUT request =================')
-	loop:unloop()
+	handler.stop()
 end
 
 local put_url = arg[1] or 'http://127.0.0.1:1080/'
@@ -77,5 +76,5 @@ local req = client:request{
 	on_finished = on_finished,
 }
 
-loop:loop()
+handler.start()
 

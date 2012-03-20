@@ -20,12 +20,11 @@
 
 local tconcat = table.concat
 
+local handler = require'handler'
 local httpserver = require'handler.http.server'
-local ev = require'ev'
-local loop = ev.Loop.default
 local zmq = require'handler.zmq'
 
-local ctx = zmq.init(loop, 1)
+local ctx = zmq.init(1)
 
 if #arg < 1 then
 	print('Usage: ' .. arg[0] .. ' <http_bind_uri> <zmq_req_uri>')
@@ -129,7 +128,7 @@ local function on_request(server, req, resp)
 	end
 end
 
-local server = httpserver.new(loop,{
+local server = httpserver.new({
 	-- set HTTP Server's "name/version" string.
 	name = string.format("ZMQ-HTTPServer/1.0"),
 	-- new request callback.
@@ -145,5 +144,5 @@ local server = httpserver.new(loop,{
 print("HTTP server listen on:", http_uri)
 server:listen_uri(http_uri)
 
-loop:loop()
+handler.run()
 
