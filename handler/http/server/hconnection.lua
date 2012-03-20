@@ -122,7 +122,9 @@ function conn_mt:close()
 		self.sock = nil
 		-- kill timer.
 		self.timer:stop()
-		return sock:close()
+		sock:close()
+		self.parser:reset()
+		self.server:remove_connection(self)
 	end
 end
 
@@ -177,18 +179,7 @@ end
 
 function conn_mt:handle_data(data)
 	local parser = self.parser
-	local execute = parser.execute
-	local status, bytes_parsed = pcall(execute, parser, data)
-	-- handle parse error
-	if not status then
-		local err = bytes_parsed
-		-- check if error is not an "abort http parse" error.
-		if err ~= abort_http_parse then
-			-- raise an error
-			return conn_raise_error(self, err)
-		end
-		return
-	end
+	local bytes_parsed = parser:execute(data)
 	if parser:is_upgrade() then
 		-- TODO: handle upgrade
 		-- protocol changing.
@@ -395,72 +386,110 @@ function conn_mt:response_complete()
 	end
 end
 
-local function create_request_parser(self)
+local parser_pool = {}
+
+local parser_cnt = 0
+local function create_request_parser()
 	local req
 	local resp
 	local headers
-	local parser
 	local body
-	local max_requests = self.max_keep_alive_requests
+	local hconn
+	local lhp_parser
+	local ignore = false
+	local parser = {}
+	local max_requests
 
-	-- start timeout
-	conn_set_next_timeout(self, self.request_head_timeout, "Read HTTP Request timed out.")
+	function parser:init(http_conn)
+		ignore = false
+		hconn = http_conn
+		hconn.parser = parser
+		max_requests = hconn.max_keep_alive_requests
+		-- start timeout
+		conn_set_next_timeout(hconn, hconn.request_head_timeout, "Read HTTP Request timed out.")
+	end
 
-	function self.on_message_begin()
+	function parser:reset()
+		ignore = true
+		req = nil
+		resp = nil
+		headers = nil
+		body = nil
+		hconn.resp = nil
+		hconn.parser = nil
+		hconn = nil
+		lhp_parser:reset()
+		parser_pool[#parser_pool + 1] = self
+	end
+
+	function parser:is_upgrade()
+		return lhp_parser:is_upgrade()
+	end
+
+	function parser:execute(data)
+		return lhp_parser:execute(data)
+	end
+
+	function parser.on_message_begin()
+		if ignore then return end
 		-- update timeout
-		conn_set_next_timeout(self, self.request_head_timeout, "Read HTTP Request timed out.")
+		conn_set_next_timeout(hconn, hconn.request_head_timeout, "Read HTTP Request timed out.")
 		-- setup request object.
 		req = new_request()
 		headers = req.headers
 		body = nil
-		self.need_close = false
+		hconn.need_close = false
 	end
 
-	function self.on_url(url)
+	function parser.on_url(url)
+		if not req then return end
 		-- request method, url
-		req.method = parser:method()
+		req.method = lhp_parser:method()
 		req.url = url
 	end
 
-	function self.on_header(header, val)
+	function parser.on_header(header, val)
+		if not headers then return end
 		headers[header] = val
 	end
 
-	function self.on_headers_complete()
+	function parser.on_headers_complete()
+		if not req then return end
 		-- update timeout
-		conn_set_next_timeout(self, self.request_body_timeout, "Read HTTP Request body timed out.")
+		conn_set_next_timeout(hconn, hconn.request_body_timeout, "Read HTTP Request body timed out.")
 
-		req.major, req.minor = parser:version()
+		req.major, req.minor = lhp_parser:version()
 		-- check if we need to close the connection at the end of the response.
-		if not parser:should_keep_alive() then
-			self.need_close = true
+		if not lhp_parser:should_keep_alive() then
+			hconn.need_close = true
 		end
 		-- is the connection allowed to handle more requests?
 		max_requests = max_requests - 1
 		if max_requests <= 0 then
-			self.need_close = true
+			hconn.need_close = true
 		end
 		-- track the current request during read of the request body.
-		self.cur_req = req
+		hconn.cur_req = req
 		-- create response object
-		resp = new_response(self, req, self.server.headers)
+		resp = new_response(hconn, req, hconn.server.headers)
 		req.resp = resp
 		-- queue response object to maintain the order in which responses
 		-- need to be sent out.
-		local queue = self.response_queue
+		local queue = hconn.response_queue
 		queue[#queue + 1] = resp
 		-- check for "Expect: 100-continue" header
 		local expect = req.headers['Expect']
 		if expect and expect:find("100-continue",1,true) then
 			-- call the server's 'on_check_continue' callback
-			call_callback(self.server, 'on_check_continue', req, resp)
+			call_callback(hconn.server, 'on_check_continue', req, resp)
 		else
 			-- call the server's 'on_request' callback
-			call_callback(self.server, 'on_request', req, resp)
+			call_callback(hconn.server, 'on_request', req, resp)
 		end
 	end
 
-	function self.on_body(data)
+	function parser.on_body(data)
+		if not req then return end
 		if req.stream_response then
 			-- call request's 'on_data' callback on each request body chunk
 			call_callback(req, 'on_data', resp, data)
@@ -475,29 +504,44 @@ local function create_request_parser(self)
 		end
 	end
 
-	function self.on_message_complete()
+	function parser.on_message_complete()
+		if not req then return end
 		-- We are finished reading the current request.
-		self.cur_req = nil
+		hconn.cur_req = nil
 		-- call request's on_finished callback
 		call_callback(req, 'on_finished', resp)
+		req = nil
 		resp = nil
 		headers = nil
-		self.resp = nil
+		hconn.resp = nil
 		body = nil
 		-- are we closing the connection?
-		if self.need_close then
-			local sock = self.sock
+		if hconn.need_close then
+			ignore = true
+			local sock = hconn.sock
 			if sock then
-				self.sock:shutdown(true, false) -- shutdown reads, but not writes.
+				hconn.sock:shutdown(true, false) -- shutdown reads, but not writes.
 			end
-			error(abort_http_parse, 0) -- end http parsing, drop all other queued http events.
+			return
 		end
 		-- cancel last timeout
-		conn_set_next_timeout(self, -1)
+		conn_set_next_timeout(hconn, -1)
 	end
 
-	parser = lhp.request(self)
-	self.parser = parser
+	lhp_parser = lhp.request(parser)
+	return parser
+end
+
+local function get_request_parser(http_conn)
+	local parser
+	local n = #parser_pool
+	if n > 0 then
+		parser = parser_pool[n]
+		parser_pool[n] = nil
+	else
+		parser = create_request_parser()
+	end
+	return parser:init(http_conn)
 end
 
 module(...)
@@ -526,7 +570,7 @@ function new(server, sock)
 	-- create connection timer.
 	self.timer = poll:create_timer(self, 1, 1)
 
-	create_request_parser(self)
+	get_request_parser(self)
 
 	-- set this HTTP connection object as the socket's handler.
 	sock:sethandler(self)

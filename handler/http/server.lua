@@ -40,7 +40,23 @@ local server_mt = {}
 server_mt.__index = server_mt
 
 function server_mt:new_connection(sock)
+	self.client_cnt = self.client_cnt + 1
+	self.client_conn_cnt = self.client_conn_cnt + 1
+	if self.client_cnt > self.client_concurrent_peak then
+		self.client_concurrent_peak = self.client_cnt
+	end
 	return connection(self, sock)
+end
+
+function server_mt:remove_connection(conn)
+	if conn.server == self then
+		self.client_cnt = self.client_cnt - 1
+		if self.client_cnt == 0 then
+			print("client_conn_cnt =", self.client_conn_cnt,
+				"client_concurrent_peak =", self.client_concurrent_peak)
+		end
+		conn.server = nil
+	end
 end
 
 function server_mt:add_acceptor(accept)
@@ -146,6 +162,10 @@ function new(self)
 	self.max_keep_alive_requests = self.max_keep_alive_requests or 128
 	-- normalize http headers
 	self.headers = headers_new(self.headers)
+	-- client stats
+	self.client_cnt = 0
+	self.client_conn_cnt = 0
+	self.client_concurrent_peak = 0
 
 	-- create accept callback function.
 	self.accept_handler = function(sock)
