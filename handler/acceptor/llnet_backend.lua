@@ -86,7 +86,7 @@ local function sock_new_bind_listen(handler, domain, stype, host, port, tls, bac
 		port = port,
 		tls = tls,
 		-- max sockets to try to accept on one event
-		accept_max = 100,
+		accept_max = 1000,
 		backlog = backlog,
 	}
 	setmetatable(self, acceptor_mt)
@@ -178,7 +178,8 @@ local function sock_new_bind_listen(handler, domain, stype, host, port, tls, bac
 	-- allow the address to be re-used.
 	set_opt.SO_REUSEADDR(server, 1)
 	-- defer accept until data or timeout.
-	set_opt.TCP_DEFER_ACCEPT(server, 1)
+	-- TODO: look into why this causes problems with accepting large number of sockets 50K
+	--set_opt.TCP_DEFER_ACCEPT(server, 60)
 	-- bind socket to local host:port
 	assert(server:bind(make_addr(host, port)))
 	if not is_dgram then
