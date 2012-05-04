@@ -390,10 +390,14 @@ is_closed = sock_is_closed,
 sock_mt.__index = sock_mt
 
 local function sock_read_cb(self)
+	-- make sure sock is still open.
+	if not self.sock then return end
 	return sock_recv_data(self, self.read_len, 0)
 end
 
 local function sock_write_cb(self)
+	-- make sure sock is still open.
+	if not self.sock then return end
 	local num, err = sock_send_data(self, self.write_buf)
 	if self.write_buf == nil and not self.is_closed then
 		-- write buffer is empty and socket is still open,
@@ -411,6 +415,8 @@ local function sock_write_cb(self)
 end
 
 local function sock_connected_cb(self)
+	-- make sure sock is still open.
+	if not self.sock then return end
 	if not self.write_blocked then
 		poll:file_write(self, false)
 	end
