@@ -73,24 +73,25 @@ end
 module(...)
 
 function parse(uri, info, path_only)
-	local off
+	local off = 1
 	info = info or {}
-	-- parse scheme
-	info.scheme, off = parse_scheme(uri, off)
+	-- check if uri has a scheme
+	if uri:sub(off, 1) ~= '/' then
+		-- parse scheme
+		info.scheme, off = parse_scheme(uri, off)
+	end
 	-- check if uri has an authority
 	if uri:sub(off, off + 1) == '//' then
 		-- parse authority
 		info.userinfo, info.host, info.port, off = parse_authority(uri, off + 2)
-		if path_only then
-			-- don't split path/query/fragment, keep them whole.
-			info.path = uri:sub(off)
-		else
-			-- parse path, query, and fragment
-			info.path, info.query, info.fragment, off = parse_path_query_fragment(uri, off)
-		end
-	else
-		-- uri has no authority the rest of the uri is the path.
+	end
+	-- parse path
+	if path_only then
+		-- don't split path/query/fragment, keep them whole.
 		info.path = uri:sub(off)
+	else
+		-- parse path, query, and fragment
+		info.path, info.query, info.fragment, off = parse_path_query_fragment(uri, off)
 	end
 	-- check for zero-length path
 	if #info.path == 0 then
