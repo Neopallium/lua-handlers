@@ -75,13 +75,13 @@ end
 
 function host_mt:retry_request(req, is_push_back)
 	-- make sure request is valid.
-	if req.is_cancelled then return end
+	if req.is_cancelled then return false end
 	-- increase retry count
 	local count = (req.retries or 0) + 1
 	req.retries = count
 	if count > 4 then
 		-- reached max request retries
-		return
+		return false
 	end
 	-- queue request
 	if is_push_back then
@@ -89,6 +89,7 @@ function host_mt:retry_request(req, is_push_back)
 	else
 		tinsert(self.requests, req) -- insert at end of request queue
 	end
+	return true
 end
 
 function host_mt:queue_request(req)

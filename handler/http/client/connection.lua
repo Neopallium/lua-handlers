@@ -79,7 +79,10 @@ function client_mt:handle_error(err)
 			local pool = self.pool
 			-- then re-queue request in a new connection.
 			if pool then
-				pool:retry_request(req, true)
+				if not pool:retry_request(req, true) then
+					-- failed to re-send request.
+					call_callback(req, 'on_error', resp, err)
+				end
 			end
 			-- don't send closed error to request.
 			req = nil
@@ -126,10 +129,12 @@ function client_mt:queue_request(req)
 	offset = offset + 1
 	data[offset] = "\r\n"
 	-- send request.
-	self.sock:send(tconcat(data))
-	-- send request body
-	if not self.expect_100 then
-		self:send_body()
+	local num, err = self.sock:send(tconcat(data))
+	if not err then
+		-- send request body
+		if not self.expect_100 then
+			self:send_body()
+		end
 	end
 
 	return true
