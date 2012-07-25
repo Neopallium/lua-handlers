@@ -120,6 +120,7 @@ function new(client, req, body)
 	else
 		error("Unknown protocol scheme in URL: " .. scheme)
 	end
+	req.scheme = scheme
 	if req.port == nil then
 		req.port = default_port
 	end
