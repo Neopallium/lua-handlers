@@ -20,6 +20,9 @@
 
 local setmetatable = setmetatable
 local print = print
+local tonumber = tonumber
+local char = string.char
+local type = type
 
 local function parse_scheme(uri, off)
 	local scheme, off = uri:match('^(%a[%w.+-]*):()', off)
@@ -101,12 +104,54 @@ function parse(uri, info, path_only)
 	return info
 end
 
+local function urldecode(val)
+	return val:gsub("%%(%x%x)", function(hex) return char(tonumber(hex, 16)) end)
+end
+_M.urldecode = urldecode
+
+--
+-- Create url encoding table.
+--
+local enc_map = {}
+for i=0,255 do
+	local c = char(i)
+	local enc = c
+	if c == '-' or c == '_' or c == '.' then
+	elseif 'a' <= c and c <= 'z' then
+	elseif 'A' <= c and c <= 'Z' then
+	elseif '0' <= c and c <= '9' then
+	else
+		enc = ("%%%02x"):format(i)
+	end
+	if c ~= enc then
+		enc_map[c] = enc
+	end
+end
+
+local function urlencode(val)
+	return val:gsub("([^%a])", enc_map)
+end
+_M.urlencode = urlencode
+
 function parse_query(query, values)
 	query = query or ''
 	values = values or {}
 	-- parse name/value pairs
 	for k,v in query:gmatch('([^=]+)=([^&]*)&?') do
-		values[k] = v
+		-- url decode value
+		v = urldecode(v)
+		local v1 = values[k]
+		if v1 then
+			-- multiple values with same key
+			if type(v1) == 'string' then
+				-- switch to a table to hold all values.
+				v1 = { v1 }
+			end
+			v1[#v1 + 1] = v
+			values[k] = v1
+		else
+			values[k] = v
+		end
 	end
 	return values
 end
