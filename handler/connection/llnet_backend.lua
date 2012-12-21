@@ -232,7 +232,7 @@ local function sock_send_data(self, buf)
 	local num, err = sock:send(buf, 0)
 	if not num then
 		-- got timeout error block writes.
-		if num == false then
+		if err == 'EAGAIN' then
 			-- got EAGAIN
 			is_blocked = true
 		else -- data == nil
