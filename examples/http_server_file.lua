@@ -40,6 +40,9 @@ local function on_request(server, req, resp)
 	resp:set_body(ltn12.source.file(io.open(filename, 'rb')))
 	resp:set_status(200)
 	resp:send()
+	resp.on_error = function(resp, req, err)
+		print('error sending http response:', err)
+	end
 end
 
 local server = httpserver.new({
