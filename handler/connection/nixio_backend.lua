@@ -151,6 +151,9 @@ local function sock_close(self)
 	self.is_closing = true
 	self.read_blocked = true
 	if not self.write_buf or self.has_error then
+		if self.write_timer then
+			self.write_timer:stop()
+		end
 		poll:file_del(self)
 		sock:close()
 		self.sock = nil

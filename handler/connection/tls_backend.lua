@@ -66,6 +66,9 @@ end
 local function sock_close(self)
 	self.is_closing = true
 	if not self.write_buf or self.has_error then
+		if self.write_timer then
+			self.write_timer:stop()
+		end
 		poll:file_del(self)
 		self.sock:shutdown()
 	end
