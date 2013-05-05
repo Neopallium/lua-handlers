@@ -133,7 +133,7 @@ local function conn_raise_error(self, err)
 	local resp = self.cur_resp
 	if resp then
 		-- then signal an error (i.e. failed to write the whole response)
-		call_callback(resp, 'on_error', resp.req, err)
+		call_callback(resp, 'on_error', resp.request, err)
 	end
 	-- raise error on all pending responses.
 	local queue = self.response_queue
