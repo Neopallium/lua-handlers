@@ -137,7 +137,7 @@ local function sock_set_write_timeout(self, timeout)
 	end
 	-- update timeout interval and start the timer if socket is write blocked.
 	if self.write_blocked then
-		timer:again(timeout)
+		timer:again(self.loop, timeout)
 	end
 end
 
@@ -147,7 +147,7 @@ local function sock_reset_write_timeout(self)
 	-- write timeout is disabled.
 	if timeout < 0 or timer == nil then return end
 	-- update timeout interval
-	timer:again(timeout)
+	timer:again(self.loop, timeout)
 end
 
 local function sock_send_data(self, buf)
