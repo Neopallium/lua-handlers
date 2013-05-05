@@ -75,8 +75,12 @@ local function sock_close(self)
 	self.is_closing = true
 	self.read_blocked = true
 	if not self.write_buf or self.has_error then
-		self.io_write:stop(self.loop)
-		self.io_read:stop(self.loop)
+		local loop = self.loop
+		if self.write_timer then
+			self.write_timer:stop(loop)
+		end
+		self.io_write:stop(loop)
+		self.io_read:stop(loop)
 		sock:close()
 		self.sock = nil
 	end
