@@ -331,7 +331,7 @@ local function sock_tls_wrap(self, tls, is_client)
 	-- create callback closure
 	local write_cb = function()
 		local num, err = sock_send_data(self, self.write_buf)
-		if self.write_buf == nil and not self.is_closed then
+		if self.write_buf == nil and not self.is_closing then
 			-- write buffer is empty and socket is still open,
 			-- call drain callback.
 			local handler = self.handler
