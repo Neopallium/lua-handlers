@@ -32,6 +32,7 @@ local handler = require"handler"
 local poll = handler.get_poller()
 
 local lhp = require"http.parser"
+local get_request_parser
 
 local lbuf = require"buf"
 
@@ -122,7 +123,9 @@ function conn_mt:close()
 		-- kill timer.
 		self.timer:stop()
 		sock:close()
-		self.parser:reset()
+		if self.parser then
+			self.parser:reset()
+		end
 		self.server:remove_connection(self)
 	end
 end
@@ -177,7 +180,7 @@ function conn_mt:handle_error(err)
 end
 
 function conn_mt:handle_data(data)
-	local parser = self.parser
+	local parser = self.parser or get_request_parser(self)
 	local bytes_parsed = parser:execute(data)
 	if parser:is_upgrade() then
 		-- TODO: handle upgrade
@@ -187,6 +190,9 @@ function conn_mt:handle_data(data)
 		-- failed to parse response.
 		self:handle_error(format("http-parser: failed to parse all received data=%d, parsed=%d",
 			#data, bytes_parsed))
+	elseif parser.finished then
+		-- put parser back into pool
+		parser:reset()
 	end
 end
 
@@ -396,7 +402,7 @@ local function create_request_parser()
 	local hconn
 	local lhp_parser
 	local ignore = false
-	local parser = {}
+	local parser = { finished = false }
 	local max_requests
 
 	function parser:init(http_conn)
@@ -417,6 +423,7 @@ local function create_request_parser()
 		hconn.resp = nil
 		hconn.parser = nil
 		hconn = nil
+		parser.finished = false
 		lhp_parser:reset()
 		parser_pool[#parser_pool + 1] = self
 	end
@@ -526,13 +533,15 @@ local function create_request_parser()
 		end
 		-- cancel last timeout
 		conn_set_next_timeout(hconn, -1)
+		-- finished parser an http request.
+		parser.finished = true
 	end
 
 	lhp_parser = lhp.request(parser)
 	return parser
 end
 
-local function get_request_parser(http_conn)
+function get_request_parser(http_conn)
 	local parser
 	local n = #parser_pool
 	if n > 0 then
@@ -541,7 +550,8 @@ local function get_request_parser(http_conn)
 	else
 		parser = create_request_parser()
 	end
-	return parser:init(http_conn)
+	parser:init(http_conn)
+	return parser
 end
 
 module(...)
@@ -569,8 +579,6 @@ function new(server, sock)
 
 	-- create connection timer.
 	self.timer = poll:create_timer(self, 1, 1)
-
-	get_request_parser(self)
 
 	-- set this HTTP connection object as the socket's handler.
 	sock:sethandler(self)
