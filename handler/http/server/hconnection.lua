@@ -111,7 +111,6 @@ local function call_callback(obj, cb, ...)
 	return false
 end
 
-local abort_http_parse = {}
 local conn_mt = {}
 conn_mt.__index = conn_mt
 
