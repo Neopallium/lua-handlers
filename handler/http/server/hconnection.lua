@@ -509,6 +509,7 @@ local function create_request_parser()
 		hconn.cur_req = nil
 		-- call request's on_finished callback
 		call_callback(req, 'on_finished', resp)
+		if hconn == nil then return end
 		req = nil
 		resp = nil
 		headers = nil
