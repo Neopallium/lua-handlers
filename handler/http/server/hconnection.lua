@@ -182,11 +182,7 @@ end
 function conn_mt:handle_data(data)
 	local parser = self.parser or get_request_parser(self)
 	local bytes_parsed = parser:execute(data)
-	if parser:is_upgrade() then
-		-- TODO: handle upgrade
-		-- protocol changing.
-		return
-	elseif #data ~= bytes_parsed then
+	if #data ~= bytes_parsed then
 		-- failed to parse response.
 		self:handle_error(format("http-parser: failed to parse all received data=%d, parsed=%d",
 			#data, bytes_parsed))
@@ -424,10 +420,6 @@ local function create_request_parser()
 		parser_pool[#parser_pool + 1] = self
 	end
 
-	function parser:is_upgrade()
-		return lhp_parser:is_upgrade()
-	end
-
 	function parser:execute(data)
 		return lhp_parser:execute(data)
 	end
@@ -461,6 +453,12 @@ local function create_request_parser()
 		conn_set_next_timeout(hconn, hconn.request_body_timeout, "Read HTTP Request body timed out.")
 
 		req.major, req.minor = lhp_parser:version()
+		-- check if we need to upgrade the connection.
+		if lhp_parser:is_upgrade() then
+			-- TODO: handle upgrade
+			-- protocol changing.
+			hconn.upgrade = true
+		end
 		-- check if we need to close the connection at the end of the response.
 		if not lhp_parser:should_keep_alive() then
 			hconn.need_close = true
