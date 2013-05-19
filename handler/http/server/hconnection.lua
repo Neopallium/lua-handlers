@@ -403,15 +403,11 @@ local function create_request_parser()
 	local lhp_parser
 	local ignore = false
 	local parser = { finished = false }
-	local max_requests
 
 	function parser:init(http_conn)
 		ignore = false
 		hconn = http_conn
 		hconn.parser = parser
-		max_requests = hconn.max_keep_alive_requests
-		-- start timeout
-		conn_set_next_timeout(hconn, hconn.request_head_timeout, "Read HTTP Request timed out.")
 	end
 
 	function parser:reset()
@@ -470,9 +466,11 @@ local function create_request_parser()
 			hconn.need_close = true
 		end
 		-- is the connection allowed to handle more requests?
-		max_requests = max_requests - 1
+		local max_requests = hconn.max_requests - 1
 		if max_requests <= 0 then
 			hconn.need_close = true
+		else
+			hconn.max_requests = max_requests
 		end
 		-- track the current request during read of the request body.
 		hconn.cur_req = req
@@ -568,7 +566,7 @@ function new(server, sock)
 		request_body_timeout = server.request_body_timeout or -1,
 		write_timeout = write_timeout,
 		keep_alive_timeout = server.keep_alive_timeout or -1,
-		max_keep_alive_requests = server.max_keep_alive_requests or 0,
+		max_requests = server.max_keep_alive_requests or 0,
 		send_min_headers = server.send_min_headers or 0,
 	}, conn_mt)
 
@@ -583,6 +581,8 @@ function new(server, sock)
 	-- set this HTTP connection object as the socket's handler.
 	sock:sethandler(self)
 
+	-- start timeout
+	conn_set_next_timeout(self, self.request_head_timeout, "Read HTTP Request timed out.")
 	return self
 end
 
