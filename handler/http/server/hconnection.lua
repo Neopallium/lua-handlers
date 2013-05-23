@@ -34,7 +34,7 @@ local poll = handler.get_poller()
 local lhp = require"http.parser"
 local get_request_parser
 
-local lbuf = require"buf"
+local new_buffer = require"handler.buffer".new
 
 local connection = require"handler.connection"
 
@@ -200,7 +200,7 @@ end
 -- create a place-holder continue response object.
 local continue_resp = { _is_ready_to_send = true }
 
-local resp_tmp_buf = lbuf.new(8 * 1024)
+local resp_tmp_buf = new_buffer(8 * 1024)
 local function conn_send_response(self, resp)
 	-- check for '100 Continue' response marker.
 	if resp == continue_resp then
@@ -219,17 +219,17 @@ local function conn_send_response(self, resp)
 	if resp.http_version then
 		http_version = resp.http_version
 	end
-	local status_code
-	if resp.reason then
-		status_code = tostring(status) .. ' ' .. resp.reason
-	else
-		status_code = http_status_codes[status] or (tostring(status))
-	end
 	local buf = resp_tmp_buf
 	buf:reset() -- clear old data.
 	buf:append_data(http_version)
 	buf:append_data(" ")
-	buf:append_data(status_code)
+	if resp.reason then
+		buf:append_data(tostring(status))
+		buf:append_data(" ")
+		buf:append_data(resp.reason)
+	else
+		buf:append_data(http_status_codes[status] or (tostring(status)))
+	end
 	buf:append_data("\r\n")
 	-- preprocess response body
 	self:preprocess_body()
