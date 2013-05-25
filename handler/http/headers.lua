@@ -144,14 +144,15 @@ function new(headers)
 end
 
 function dup(src)
-	local dst = new()
+	local dst = {}
 	-- copy headers from src
 	for i=1,#src do
 		local name = src[i]
 		local val = src[name]
 		dst[name] = val
+		dst[i] = name
 	end
-	return dst
+	return setmetatable(dst, headers_mt)
 end
 
 function copy_defaults(dst, src)
