@@ -89,9 +89,15 @@ for i=1,#common_headers do
 	normalized[name:lower()] = name
 end
 local str_lower = string.lower
----[[
 local has_ffi, ffi = pcall(require, 'ffi')
 if jit and has_ffi and jit.version_num < 20100 then
+	--
+	-- NYI string.lower() replacement for LuaJIT 2.0.x
+	--
+	local tolower = ffi.new('char[255]')
+	for i=0,255 do
+		tolower[i] = (i >= 65 and i <= 90) and (i + 32) or i
+	end
 	local max = 1024
 	local buf = ffi.new('char[?]', max)
 	local byte = string.byte
@@ -103,15 +109,13 @@ if jit and has_ffi and jit.version_num < 20100 then
 		end
 		for i=0,len-1 do
 			local c = byte(str, i+1)
-			if c >= 65 and c <= 90 then
-				c = c + 32
-			end
+			c = tolower[c]
 			buf[i] = c
 		end
 		return fstr(buf, len)
 	end
 end
---]]
+
 setmetatable(normalized, {
 __index = function(names, name)
 	-- search for normailized form of 'name'
