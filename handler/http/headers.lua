@@ -93,27 +93,16 @@ __index = function(names, name)
 	-- search for normailized form of 'name'
 	local norm = name:lower()
 	-- if header name is already all lowercase, then just return it.
-	if norm == name then
-		-- no normalized form for this header name.
-		return name
-	end
-	-- get normalized header name.
-	return rawget(names, norm)
+	-- otherwise check if there is a normalized version of the name.
+	return (norm == name) and norm or (rawget(names, norm) or norm)
 end
 })
 
 local headers_mt = {}
 
 function headers_mt.__index(headers, name)
-	-- normalize header name
-	local norm = normalized[name]
-	-- if normalized name is nil or the same as name
-	if norm == nil or norm == name then
-		-- then no value exists for this header.
-		return nil
-	end
-	-- get normalized header's value.
-	return rawget(headers, norm)
+	-- lookup header's value using the normalized version of the name.
+	return rawget(headers, normalized[name])
 end
 
 function headers_mt.__newindex(headers, name, value)
