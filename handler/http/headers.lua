@@ -88,10 +88,34 @@ for i=1,#common_headers do
 	normalized[name] = name
 	normalized[name:lower()] = name
 end
+local str_lower = string.lower
+---[[
+local has_ffi, ffi = pcall(require, 'ffi')
+if jit and has_ffi and jit.version_num < 20100 then
+	local max = 1024
+	local buf = ffi.new('char[?]', max)
+	local byte = string.byte
+	local fstr = ffi.string
+	function str_lower(str)
+		local len = #str
+		if len >= max then
+			return str:lower() -- fall back for large strings.
+		end
+		for i=0,len-1 do
+			local c = byte(str, i+1)
+			if c >= 65 and c <= 90 then
+				c = c + 32
+			end
+			buf[i] = c
+		end
+		return fstr(buf, len)
+	end
+end
+--]]
 setmetatable(normalized, {
 __index = function(names, name)
 	-- search for normailized form of 'name'
-	local norm = name:lower()
+	local norm = str_lower(name)
 	-- if header name is already all lowercase, then just return it.
 	-- otherwise check if there is a normalized version of the name.
 	return (norm == name) and norm or (rawget(names, norm) or norm)
