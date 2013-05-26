@@ -25,6 +25,7 @@ local print = print
 local assert = assert
 local type = type
 local pairs = pairs
+local error = error
 
 local http_headers = require'handler.http.headers'
 local new_headers = http_headers.new
