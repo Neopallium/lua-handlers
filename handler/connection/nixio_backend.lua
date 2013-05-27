@@ -135,12 +135,11 @@ end
 local function sock_shutdown(self, read, write)
 	local how = ''
 	if read then
-		how = 'rd'
+		how = write and 'rdwr' or 'rd'
 		-- stop reading from socket, we don't want any more data.
 		poll:file_read(self, false)
-	end
-	if write then
-		how = how .. 'wr'
+	elseif write then
+		how = 'wr'
 	end
 	return self.sock:shutdown(how)
 end

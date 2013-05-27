@@ -125,26 +125,11 @@ local function sock_getsockname(self)
 end
 
 local function sock_shutdown(self, read, write)
-	local how = llnet.SHUT_RDWR
-	if read then
-		if not write then
-			-- only shutdown read
-			how = llnet.SHUT_RD
-		end
-	elseif write then
-		-- only shutdown write
-		how = llnet.SHUT_WR
-	else
-		-- both read & write are false or nil.
-		-- default to shutdown both.
-		read = true
-		write = true
-	end
 	if read then
 		-- stop reading from socket, we don't want any more data.
 		poll:file_read(self, false)
 	end
-	return self.sock:shutdown(how)
+	return self.sock:shutdown(read or 0, write or 0)
 end
 
 local function sock_close(self)
