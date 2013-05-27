@@ -476,7 +476,8 @@ local function sock_new_connect(handler, domain, stype, host, port, laddr, lport
 	-- connect to host:port
 	local ret, err = sock:connect(make_addr(host, port))
 	if not ret and err ~= "EINPROGRESS" then
-		sock:close()
+		-- report error
+		sock_handle_error(self, err)
 		return nil, err
 	end
 	return self
