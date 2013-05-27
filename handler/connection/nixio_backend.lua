@@ -157,6 +157,9 @@ local function sock_close(self)
 		poll:file_del(self)
 		sock:close()
 		self.sock = nil
+	else
+		-- Stil sending data, shutdown read-side.
+		sock_shutdown(self, true, false)
 	end
 end
 
@@ -386,10 +389,14 @@ is_closed = sock_is_closed,
 sock_mt.__index = sock_mt
 
 local function sock_read_cb(self)
+	-- make sure sock is still open.
+	if not self.sock then return end
 	return sock_recv_data(self, self.read_len, 0)
 end
 
 local function sock_write_cb(self)
+	-- make sure sock is still open.
+	if not self.sock then return end
 	if not sock_send_data(self, self.write_buf) then
 		-- writes still blocked.
 		return
@@ -412,6 +419,8 @@ local function sock_write_cb(self)
 end
 
 local function sock_connected_cb(self)
+	-- make sure sock is still open.
+	if not self.sock then return end
 	-- change callback to sock_write_cb
 	self.on_io_write = sock_write_cb
 	-- check for connect errors by tring to read from the socket.
