@@ -23,6 +23,7 @@ local print = print
 local assert = assert
 local tostring = tostring
 local tonumber = tonumber
+local error = error
 
 local ev = require"ev"
 

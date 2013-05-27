@@ -21,6 +21,7 @@
 local setmetatable = setmetatable
 local print = print
 local assert = assert
+local error = error
 
 local ev = require"ev"
 local nixio = require"nixio"
