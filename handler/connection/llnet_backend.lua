@@ -202,7 +202,7 @@ local function sock_set_write_timeout(self, timeout)
 		timer = poll:create_timer(self, timeout, timeout)
 		self.write_timer = timer
 		-- enable timer if socket is write blocked.
-		if self.write_blocked then
+		if self.write_buf then
 			timer:start()
 		end
 		return
@@ -214,7 +214,7 @@ local function sock_set_write_timeout(self, timeout)
 		return
 	end
 	-- update timeout interval and start the timer if socket is write blocked.
-	if self.write_blocked then
+	if self.write_buf then
 		timer:again(timeout)
 	end
 end
@@ -228,80 +228,76 @@ local function sock_reset_write_timeout(self)
 	timer:again(timeout)
 end
 
-local function sock_send_data(self, buf)
-	local sock = self.sock
-	local is_blocked = false
+local function sock_handle_send_unblocked(self)
+	-- un-block write events.
+	self.write_buf = false
+	poll:file_write(self, false)
+	-- no data to write, so stop timer.
+	if self.write_timer then
+		self.write_timer:stop()
+	end
+end
 
-	local num, err = sock:send(buf, 0)
+local function sock_handle_send_blocked(self, buf, written)
+
+	-- check if socket was already blocked.
+	if not self.write_buf then
+		poll:file_write(self, true)
+		-- socket is write blocked, start write timeout
+		sock_reset_write_timeout(self)
+	else
+		-- socket still blocked.
+		if written > 0 then
+			-- reset write timeout, since some data was written and the socket is still write blocked.
+			sock_reset_write_timeout(self)
+		end
+	end
+	-- update write buffer
+	self.write_buf = buf
+	return false, 'blocked'
+end
+
+local function sock_send_data(self, buf)
+	local num, err = self.sock:send(buf, 0)
+
 	if not num then
 		-- got timeout error block writes.
 		if err == 'EAGAIN' then
 			-- got EAGAIN
-			is_blocked = true
+			return sock_handle_send_blocked(self, buf, 0)
 		else -- data == nil
 			-- report error
 			sock_handle_error(self, err)
-			return nil, err
+			return false, 'error'
 		end
 	else
+		local len = #buf
 		-- trim sent data.
-		if num < #buf then
+		if num < len then
 			-- remove sent bytes from buffer.
 			buf = buf:sub(num+1)
 			-- partial send, not enough socket buffer space, so blcok writes.
-			is_blocked = true
+			return sock_handle_send_blocked(self, buf, num)
 		else
-			self.write_buf = nil
 			if self.is_closing then
 				-- write buffer is empty, finish closing socket.
 				sock_close(self)
-				return num, 'closed'
 			end
 		end
 	end
-	-- block/un-block write events.
-	if is_blocked ~= self.write_blocked then
-		self.write_blocked = is_blocked
-		if is_blocked then
-			self.write_buf = buf
-			poll:file_write(self, true)
-			-- socket is write blocked, start write timeout
-			sock_reset_write_timeout(self)
-			return num, 'blocked'
-		else
-			poll:file_write(self, false)
-			-- no data to write, so stop timer.
-			if self.write_timer then
-				self.write_timer:stop()
-			end
-		end
-	elseif is_blocked then
-		-- reset write timeout, since some data was written and the socket is still write blocked.
-		sock_reset_write_timeout(self)
-	end
-	return num
+	return true
 end
 
 local function sock_send(self, data)
 	-- only process send when given data to send.
-	if data == nil or #data == 0 then return end
-	local num, err
-	local buf = self.write_buf
-	if buf then
-		buf = buf .. data
+	local write_buf = self.write_buf
+	if not write_buf then
+		return sock_send_data(self, data)
 	else
-		buf = data
-	end
-	if not self.write_blocked then
-		num, err = sock_send_data(self, buf)
-	else
-		self.write_buf = buf
+		self.write_buf = write_buf .. data
 		-- let the caller know that the socket is blocked and data is being buffered
-		err = 'blocked'
 	end
-	-- always return the size of the data passed in, since un-sent data will be buffered
-	-- for sending later.
-	return #data, err
+	return false, 'blocked'
 end
 
 local function sock_handle_connected(self)
@@ -393,16 +389,17 @@ is_closed = sock_is_closed,
 sock_mt.__index = sock_mt
 
 local function sock_read_cb(self)
-	-- make sure sock is still open.
-	if not self.sock then return end
 	return sock_recv_data(self, self.read_len, 0)
 end
 
 local function sock_write_cb(self)
-	-- make sure sock is still open.
-	if not self.sock then return end
-	local num, err = sock_send_data(self, self.write_buf)
-	if self.write_buf == nil and not self.is_closing then
+	if not sock_send_data(self, self.write_buf) then
+		-- writes still blocked.
+		return
+	end
+	-- writes unblocked.
+	sock_handle_send_unblocked(self)
+	if not self.is_closing then
 		-- write buffer is empty and socket is still open,
 		-- call drain callback.
 		local handler = self.handler
@@ -418,15 +415,18 @@ local function sock_write_cb(self)
 end
 
 local function sock_connected_cb(self)
-	-- make sure sock is still open.
-	if not self.sock then return end
-	if not self.write_blocked then
-		poll:file_write(self, false)
-	end
 	-- change callback to sock_write_cb
 	self.on_io_write = sock_write_cb
 	-- check for connect errors by tring to read from the socket.
-	return sock_read_cb(self)
+	sock_read_cb(self)
+
+	-- send any queued data.
+	if self.write_buf then
+		sock_write_cb(self)
+	else
+		-- no data to send, disable write events
+		poll:file_write(self, false)
+	end
 end
 
 local function sock_wrap(handler, sock, is_connected)
@@ -435,7 +435,7 @@ local function sock_wrap(handler, sock, is_connected)
 		handler = handler,
 		sock = sock,
 		is_connecting = true,
-		write_blocked = false,
+		write_buf = false,
 		write_timeout = -1,
 		read_blocked = false,
 		read_len = 8192,
