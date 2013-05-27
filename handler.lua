@@ -76,8 +76,15 @@ function _M.init(options)
 end
 
 function _M.run()
-	local poll = _M.get_poller()
-	return poll:start()
+	local stat, rc = pcall(function()
+		local poll = _M.get_poller()
+		return poll:start()
+	end)
+	if not stat then
+		print("Error catch from poller:", rc)
+		return stat, rc
+	end
+	return rc
 end
 _M.start = _M.run
 
