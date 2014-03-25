@@ -355,7 +355,16 @@ function conn_mt:send_body()
 			num, err = sock:send(chunk)
 			if num then len = len + num end
 		end
-	until err
+		
+	until err or chunk == ""
+	if chunk == "" then
+		local send_body_timer = ev.Timer.new(function(loop,timer)
+			timer:stop(loop);
+			timer=nil
+			self:send_body()
+		end, 1, 1)
+		send_body_timer:start(self.loop);
+	end
 end
 
 function conn_mt:response_complete()
