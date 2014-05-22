@@ -130,14 +130,11 @@ local function sock_new_bind_listen(handler, domain, stype, host, port, tls, bac
 						-- pass client socket to new connection handler.
 						if handler(sock) == nil then
 							-- connect handler returned nil, maybe they are rejecting connections.
-							break
+							count = max -- early end of accept loop
 						end
-						-- get socket handler object from socket
-						client = sock.handler
-					else
-						-- get socket handler object from socket
-						client = sock.handler
 					end
+					-- get socket handler object from socket
+					client = sock.handler
 					-- handle first data block from udp client
 					client:handle_data(data)
 				end
