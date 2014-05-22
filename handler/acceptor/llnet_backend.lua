@@ -50,11 +50,20 @@ local uri_mod = require"handler.uri"
 local uri_parse = uri_mod.parse
 local query_parse = uri_mod.parse_query
 
-local tmp_addr = llnet.LSockAddr()
-local function make_addr(host, port)
+local function make_addr(addr, host, port)
+	addr = addr or llnet.LSockAddr()
 	if host == '*' or host == nil then host = '0.0.0.0' end
-	tmp_addr:set_ip_port(host, tonumber(port))
-	return tmp_addr
+	addr:set_ip_port(host, tonumber(port))
+	return addr
+end
+
+local function new_addr(host, port)
+	return make_addr(nil, host, port)
+end
+
+local tmp_addr = llnet.LSockAddr()
+local function make_tmp_addr(host, port)
+	return make_addr(tmp_addr, host, port)
 end
 
 local acceptor_mt = {
@@ -97,19 +106,21 @@ local function sock_new_bind_listen(handler, domain, stype, host, port, tls, bac
 	local accept_cb
 	if is_dgram then
 		local udp_clients = setmetatable({},{__mode="v"})
+		local tmp_addr = llnet.LSockAddr()
+		local bind_addr = new_addr(host, port)
 		accept_cb = function()
 			local max = self.accept_max
 			local count = 0
 			repeat
-				local data, c_ip, c_port = server:recvfrom(8192)
+				local data = server:recvfrom(8192, 0, tmp_addr)
 				if not data then
 					if data ~= false then
-						print('dgram_accept.error:', c_ip, c_port)
+						print('dgram_accept.error:', tostring(tmp_addr))
 					end
 					break
 				else
 					local client
-					local c_key = c_ip .. tostring(c_port)
+					local c_key = tostring(tmp_addr)
 					-- look for existing client socket.
 					local sock = udp_clients[c_key]
 					-- check if socket is still valid.
@@ -121,9 +132,9 @@ local function sock_new_bind_listen(handler, domain, stype, host, port, tls, bac
 						-- make a duplicate server socket
 						sock = new_socket(domain, stype)
 						assert(set_opt.SO_REUSEADDR(sock, 1))
-						assert(sock:bind(make_addr(host, port)))
+						assert(sock:bind(bind_addr))
 						-- connect dupped socket to client's ip:port
-						assert(sock:connect(make_addr(c_ip, c_port)))
+						assert(sock:connect(tmp_addr))
 						-- wrap socket
 						sock = wrap_connected(nil, sock)
 						udp_clients[c_key] = sock
@@ -178,7 +189,7 @@ local function sock_new_bind_listen(handler, domain, stype, host, port, tls, bac
 	-- TODO: look into why this causes problems with accepting large number of sockets 50K
 	--set_opt.TCP_DEFER_ACCEPT(server, 60)
 	-- bind socket to local host:port
-	assert(server:bind(make_addr(host, port)))
+	assert(server:bind(make_tmp_addr(host, port)))
 	if not is_dgram then
 		-- set the socket to listening mode
 		assert(server:listen(backlog))
