@@ -1,7 +1,7 @@
 #!/usr/bin/env lua
 
 package	= 'lua-handler'
-version	= 'terminar-0'
+version	= 'terminar-1'
 source	= {
 	url	= 'git://github.com/terminar/lua-handlers.git'
 }
