@@ -36,19 +36,19 @@ local SSL_ERROR_WANT_CONNECT = 7
 local SSL_ERROR_WANT_ACCEPT = 8
 
 local function sock_setsockopt(self, level, option, value)
-	return self.sock:setsockopt(level, option, value)
+	return self.sock.socket:setsockopt(level, option, value)
 end
 
 local function sock_getsockopt(self, level, option)
-	return self.sock:getsockopt(level, option)
+	return self.sock.socket:getsockopt(level, option)
 end
 
 local function sock_getpeername(self)
-	return self.sock:getpeername()
+	return self.sock.socket:getpeername()
 end
 
 local function sock_getsockname(self)
-	return self.sock:getsockname()
+	return self.sock.socket:getsockname()
 end
 
 local function sock_shutdown(self, read, write)
