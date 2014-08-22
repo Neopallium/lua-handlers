@@ -112,10 +112,10 @@ local function sock_new_bind_listen(handler, domain, stype, host, port, tls, bac
 			local max = self.accept_max
 			local count = 0
 			repeat
-				local data = server:recvfrom(8192, 0, tmp_addr)
+				local data, err = server:recvfrom(8192, 0, tmp_addr)
 				if not data then
-					if data ~= false then
-						print('dgram_accept.error:', tostring(tmp_addr))
+					if err ~= 'EAGAIN' then
+						print('dgram_accept.error:', err)
 					end
 					break
 				else
