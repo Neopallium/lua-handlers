@@ -117,11 +117,19 @@ local function sock_getsockopt(self, level, option)
 end
 
 local function sock_getpeername(self)
-	error("Not implemented!")
+	local ret, err = self.sock:get_peername(tmp_addr)
+	if not ret and err ~= "EINPROGRESS" then
+		return nil, err
+	end
+	return tmp_addr:get_address(), tmp_addr:get_port()
 end
 
 local function sock_getsockname(self)
-	error("Not implemented!")
+	local ret, err = self.sock:get_sockname(tmp_addr)
+	if not ret and err ~= "EINPROGRESS" then
+		return nil, err
+	end
+	return tmp_addr:get_address(), tmp_addr:get_port()
 end
 
 local function sock_shutdown(self, read, write)
