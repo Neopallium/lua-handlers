@@ -483,6 +483,8 @@ local function create_request_parser(self)
 		headers = nil
 		self.resp = nil
 		body = nil
+		-- cancel last timeout
+		conn_set_next_timeout(self, -1)
 		-- are we closing the connection?
 		if self.need_close then
 			local sock = self.sock
@@ -492,8 +494,6 @@ local function create_request_parser(self)
 			end
 			error(abort_http_parse, 0) -- end http parsing, drop all other queued http events.
 		end
-		-- cancel last timeout
-		conn_set_next_timeout(self, -1)
 	end
 
 	parser = lhp.request(self)

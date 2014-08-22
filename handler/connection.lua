@@ -57,12 +57,24 @@ local function sock_getsockname(self)
 	return self.sock:getsockname()
 end
 
+local function sock_block_read(self, block)
+	-- block/unblock read
+	if block ~= self.read_blocked then
+		self.read_blocked = block
+		if block then
+			self.io_read:stop(self.loop)
+		else
+			self.io_read:start(self.loop)
+		end
+	end
+end
+
 local function sock_shutdown(self, read, write)
 	local how = ''
 	if read then
 		how = 'rd'
 		-- stop reading from socket, we don't want any more data.
-		self.io_read:stop(self.loop)
+		sock_block_read(self, true)
 	end
 	if write then
 		how = how .. 'wr'
@@ -84,18 +96,6 @@ local function sock_close(self)
 		self.io_read:stop(loop)
 		sock:close()
 		self.sock = nil
-	end
-end
-
-local function sock_block_read(self, block)
-	-- block/unblock read
-	if block ~= self.read_blocked then
-		self.read_blocked = block
-		if block then
-			self.io_read:stop(self.loop)
-		else
-			self.io_read:start(self.loop)
-		end
 	end
 end
 
