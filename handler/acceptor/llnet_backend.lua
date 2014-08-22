@@ -120,7 +120,7 @@ local function sock_new_bind_listen(handler, domain, stype, host, port, tls, bac
 					break
 				else
 					local client
-					local c_key = tostring(tmp_addr)
+					local c_key = tmp_addr:todata()
 					-- look for existing client socket.
 					local sock = udp_clients[c_key]
 					-- check if socket is still valid.
