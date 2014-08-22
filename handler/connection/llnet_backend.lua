@@ -318,6 +318,11 @@ local function sock_recv_data(self, chunk_len, bytes_read)
 			-- no data
 			return true
 		else -- data == nil
+			if err == 'EMSGSIZE' then
+				-- TODO: need to return partial UDP packet.
+				-- oversized packet
+				return true
+			end
 			-- report error
 			sock_handle_error(self, err)
 			return false, err
