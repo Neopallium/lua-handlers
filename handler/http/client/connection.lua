@@ -31,6 +31,7 @@ local lhp = require"http.parser"
 local connection = require"handler.connection"
 
 local chunked = require"handler.http.chunked"
+local encode_chunk = chunked.encode
 local chunked = chunked.new
 
 local headers = require"handler.http.headers"
@@ -145,7 +146,7 @@ function client_mt:preprocess_body()
 	local req = self.cur_req
 	local body = req.body
 	-- if no request body, then we are finished.
-	if not body then
+	if not body and not req.stream_body then
 		-- make sure there is no body_src left-over from previous request.
 		self.body_src = nil
 		-- call request_sent callback.
@@ -159,6 +160,11 @@ function client_mt:preprocess_body()
 		self.expect_100 = true
 	else
 		self.expect_100 = false
+	end
+
+	if req.stream_body then
+		req.headers['Transfer-Encoding'] = 'chunked'
+		return
 	end
 
 	local body_type = req.body_type
@@ -209,6 +215,24 @@ function client_mt:send_body()
 	until err
 end
 
+function client_mt:body_write(req, chunk)
+	local sock = self.sock
+	local num, err
+	-- make sure chunk is from the current request.
+	if self.cur_req ~= req then return false end
+
+	if chunk ~= "" then
+		-- send encoded chunk
+		num, err = sock:send(encode_chunk(chunk))
+	end
+	if chunk == nil then
+		-- finished sending request body.
+		-- call request_sent callback.
+		call_callback(self.cur_req, 'on_request_sent')
+	end
+	return num, err
+end
+
 local function create_response_parser(self)
 	local resp
 	local headers
@@ -252,7 +276,7 @@ local function create_response_parser(self)
 	function self.on_body(data)
 		if self.skip_complete then return end
 		local req = self.cur_req
-		if req.stream_response then
+		if req.stream_body then
 			-- call request's on_stream_data callback
 			call_callback(req, 'on_data', resp, data)
 		else

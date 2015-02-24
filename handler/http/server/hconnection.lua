@@ -39,6 +39,7 @@ local new_buffer = require"handler.buffer".new
 local connection = require"handler.connection"
 
 local chunked = require"handler.http.chunked"
+local encode_chunk = chunked.encode
 local chunked = chunked.new
 
 local headers = require"handler.http.headers"
@@ -302,6 +303,10 @@ end
 function conn_mt:preprocess_body()
 	local resp = self.cur_resp
 	local body = resp.body
+	if resp.stream_body then
+		resp.headers['Transfer-Encoding'] = 'chunked'
+		if not body then return end
+	end
 	-- if no response body, then we are finished.
 	if not body then
 		return self:response_complete()
@@ -336,12 +341,14 @@ end
 function conn_mt:send_body()
 	local body_src = self.body_src
 	local sock = self.sock
+
+	-- check if there is anything to send
+	if body_src == nil then return end
+
 	if self.body_type == 'string' then
 		sock:send(body_src)
 		return self:response_complete()
 	end
-	-- check if there is anything to send
-	if body_src == nil then return end
 
 	-- send chunks until socket blocks.
 	local chunk, num, err
@@ -358,6 +365,23 @@ function conn_mt:send_body()
 			if num then len = len + num end
 		end
 	until err
+end
+
+function conn_mt:body_write(resp, chunk)
+	local sock = self.sock
+	local num, err
+	-- make sure chunk is from the current response.
+	if self.cur_resp ~= resp then return false end
+
+	if chunk ~= "" then
+		-- send encoded chunk
+		num, err = sock:send(encode_chunk(chunk))
+	end
+	-- check if body is finished.
+	if chunk == nil then
+		return self:response_complete()
+	end
+	return num, err
 end
 
 function conn_mt:response_complete()
@@ -492,7 +516,7 @@ local function create_request_parser()
 
 	function parser.on_body(data)
 		if not req then return end
-		if req.stream_response then
+		if req.stream_body then
 			-- call request's 'on_data' callback on each request body chunk
 			call_callback(req, 'on_data', resp, data)
 		else

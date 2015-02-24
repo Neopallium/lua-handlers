@@ -89,6 +89,14 @@ function response_mt:send_continue()
 	return self.connection:send_continue(self)
 end
 
+function response_mt:write(data)
+	return self.connection:body_write(self, data)
+end
+
+function response_mt:close()
+	return self:write(nil)
+end
+
 module(...)
 
 function new(conn, req, default_headers)

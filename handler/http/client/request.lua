@@ -39,8 +39,16 @@ request_mt.__index = request_mt
 function request_mt:close()
 	self.is_cancelled = true
 	if self.connection then
+		if self.stream_body then
+			-- end body
+			return self:write(nil)
+		end
 		self.connection:close()
 	end
+end
+
+function request_mt:write(data)
+	return self.connection:body_write(self, data)
 end
 
 local function process_request_body(req)
