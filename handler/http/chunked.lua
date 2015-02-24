@@ -24,6 +24,23 @@ local format = string.format
 local ltn12 = require"ltn12"
 
 --
+-- Chunked Transfer Encoding
+--
+local function encode(chunk)
+	if chunk == "" then
+		return ""
+	elseif chunk then
+		local len = #chunk
+		-- prepend chunk length
+		return format('%x\r\n', len) .. chunk .. '\r\n'
+	else
+		-- return zero-length chunk.
+		return '0\r\n\r\n'
+	end
+	return nil
+end
+
+--
 -- Chunked Transfer Encoding filter
 --
 local function chunked()
@@ -50,6 +67,8 @@ module(...)
 function new(src)
 	return ltn12.filter.chain(src, chunked())
 end
+
+_M.encode = encode
 
 setmetatable(_M, { __call = function(tab, ...) return new(...) end })
 
