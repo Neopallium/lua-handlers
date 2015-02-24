@@ -352,7 +352,6 @@ function conn_mt:send_body()
 
 	-- send chunks until socket blocks.
 	local chunk, num, err
-	local len = 0
 	repeat
 		-- get next chunk
 		chunk, err = body_src()
@@ -362,7 +361,6 @@ function conn_mt:send_body()
 		if chunk ~= "" then
 			-- send chunk
 			num, err = sock:send(chunk)
-			if num then len = len + num end
 		end
 	until err
 end
