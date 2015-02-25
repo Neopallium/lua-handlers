@@ -184,9 +184,10 @@ function conn_mt:handle_data(data)
 	local parser = self.parser or get_request_parser(self)
 	local bytes_parsed = parser:execute(data)
 	if #data ~= bytes_parsed then
+		local num, err, msg = parser:error()
 		-- failed to parse response.
-		self:handle_error(format("http-parser: failed to parse all received data=%d, parsed=%d",
-			#data, bytes_parsed))
+		self:handle_error(format("http-parser: failed to parse all received data=%d, parsed=%d: %s",
+			#data, bytes_parsed, msg))
 	elseif parser.finished then
 		-- put parser back into pool
 		parser:reset()
@@ -444,6 +445,10 @@ local function create_request_parser()
 
 	function parser:execute(data)
 		return lhp_parser:execute(data)
+	end
+
+	function parser:error()
+		return lhp_parser:error()
 	end
 
 	function parser.on_message_begin()
