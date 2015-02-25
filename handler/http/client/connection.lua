@@ -218,7 +218,7 @@ function client_mt:body_write(req, chunk)
 	local sock = self.sock
 	local num, err
 	-- make sure chunk is from the current request.
-	if self.cur_req ~= req then return false end
+	if self.cur_req ~= req and req.stream_body then return false end
 
 	if chunk ~= "" then
 		-- send encoded chunk
@@ -226,6 +226,7 @@ function client_mt:body_write(req, chunk)
 	end
 	if chunk == nil then
 		-- finished sending request body.
+		req.stream_body = false
 		-- call request_sent callback.
 		call_callback(self.cur_req, 'on_request_sent')
 	end
@@ -297,6 +298,10 @@ local function create_response_parser(self)
 		end
 		local cur_resp = resp
 		local req = self.cur_req
+		-- make sure the request body has been closed
+		if req.stream_body then
+			self:body_write(req)
+		end
 		-- dis-connect request object from connection.
 		req.connection = nil
 		self.cur_req = nil 
