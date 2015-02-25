@@ -452,6 +452,8 @@ local function create_request_parser()
 	end
 
 	function parser.on_message_begin()
+		-- we still need this parser.
+		parser.finished = false
 		if ignore then return end
 		-- update timeout
 		conn_set_next_timeout(hconn, hconn.request_head_timeout, "Read HTTP Request timed out.")
