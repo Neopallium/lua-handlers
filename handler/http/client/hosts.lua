@@ -99,7 +99,7 @@ function host_mt:queue_request(req)
 	local conn = tremove(self.idle)
 	-- already have an open connection.
 	if not conn then
-		if #self.connections >= MAX_CONNECTIONS_PER_HOST then
+		if #self.connections >= self.max_connections then
 			-- queue request
 			tinsert(self.requests, req)
 			return
@@ -121,6 +121,7 @@ local function new_host(cache, client, scheme, address, port)
 	return setmetatable({
 		cache = cache,
 		client = client,
+		max_connections = client.max_connections_per_host or MAX_CONNECTIONS_PER_HOST,
 		is_https = (scheme == 'https'),
 		scheme = scheme,
 		address = address,
