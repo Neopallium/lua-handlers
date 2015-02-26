@@ -98,16 +98,21 @@ end
 function client_mt:handle_connected()
 end
 
-function client_mt:handle_data(data)
+function client_mt:handle_data(data, show)
 	local parser = self.parser
 	local bytes_parsed = parser:execute(data)
 	if parser:is_upgrade() then
 		-- protocol changing.
 		return
 	elseif #data ~= bytes_parsed then
+		local num, err, msg = parser:error()
+		-- resume parser.
+		if err == 'HPE_PAUSED' then
+			return self:handle_data(data:sub(bytes_parsed+1), true)
+		end
 		-- failed to parse response.
-		self:handle_error(format("http-parser: failed to parse all received data=%d, parsed=%d",
-			#data, bytes_parsed))
+		self:handle_error(format("http-parser: failed to parse all received data=%d, parsed=%d: %s",
+			#data, bytes_parsed, msg))
 	end
 end
 

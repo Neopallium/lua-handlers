@@ -185,6 +185,10 @@ function conn_mt:handle_data(data)
 	local bytes_parsed = parser:execute(data)
 	if #data ~= bytes_parsed then
 		local num, err, msg = parser:error()
+		-- resume parser.
+		if err == 'HPE_PAUSED' then
+			return self:handle_data(data:sub(bytes_parsed+1), true)
+		end
 		-- failed to parse response.
 		self:handle_error(format("http-parser: failed to parse all received data=%d, parsed=%d: %s",
 			#data, bytes_parsed, msg))
