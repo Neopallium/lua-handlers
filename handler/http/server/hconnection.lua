@@ -386,6 +386,7 @@ end
 function conn_mt:response_complete()
 	-- finished sending response body.
 	self.body_src = nil
+	self.body_type = nil
 	-- call response_sent callback.
 	call_callback(self.cur_resp, 'on_response_sent')
 	self.cur_resp = nil
