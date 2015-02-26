@@ -43,6 +43,20 @@ function client_mt:request(req)
 	return req
 end
 
+function client_mt:get(url, on_resp)
+	local req, err = request.new(self, {
+		url = url,
+		on_response = on_resp,
+	})
+	if req == nil then return req, err end
+
+	-- queue request to be processed.
+	local stat, err = self.hosts:queue_request(req)
+	if not stat then return nil, err end
+
+	return req
+end
+
 function client_mt:get_tls_context()
 	local tls = self.tls
 	if not tls then
