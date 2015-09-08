@@ -150,7 +150,7 @@ local function sock_send_data(self, buf)
 	local num, errno, err = sock:send(buf)
 	if not num then
 		-- got timeout error block writes.
-		if num == false then
+		if num == false or SSL_ERROR_WANT_WRITE then
 			-- got EAGAIN
 			is_blocked = true
 		else -- data == nil
@@ -275,7 +275,7 @@ local function sock_recv_data(self)
 			sock_handle_error(self, err)
 			return false, err
 		end
-	until len >= read_max and not self.read_blocked
+	until len >= read_max and not self.read_blocked or self.shutdown_waiting
 
 	return true
 end
