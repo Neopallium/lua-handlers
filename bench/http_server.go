@@ -1,7 +1,7 @@
 package main
 
 import (
-	"http"
+	"net/http"
 	"log"
 	"strconv"
 	"runtime"
@@ -16,12 +16,12 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	headers.Set("Content-Length", Data_len)
 	// Can't disable generation of "Date" header.
 	//headers.Set("Date", "")
-	headers.Set("Server", "Bench")
+	//headers.Set("Server", "Bench")
 	w.Write(Data)
 }
 
 func main() {
-	runtime.GOMAXPROCS(1)
+	runtime.GOMAXPROCS(2)
 	s := &http.Server{
 		Addr: ":1080",
 		MaxHeaderBytes: 1 << 20,
