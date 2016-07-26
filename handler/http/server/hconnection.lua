@@ -599,7 +599,7 @@ function new(server, sock)
 		write_timeout = write_timeout,
 		keep_alive_timeout = server.keep_alive_timeout or -1,
 		max_requests = server.max_keep_alive_requests or 0,
-		send_min_headers = server.send_min_headers or 0,
+		send_min_headers = server.send_min_headers,
 	}, conn_mt)
 
 	-- enable write timeouts on connection.
