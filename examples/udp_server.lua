@@ -33,7 +33,7 @@ end,
 handle_data = function(self, data)
 	print('udp_client.data:', self, data)
 end,
-handle_timer = function(self)
+on_timer = function(self)
 	self.sock:send('ping\n')
 end,
 }
