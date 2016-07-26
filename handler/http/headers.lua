@@ -142,6 +142,7 @@ end
 
 module(...)
 
+local tmp = {}
 function new(headers)
 	-- check if 'headers' has the same metatable already.
 	if getmetatable(headers) == headers_mt then
@@ -151,8 +152,17 @@ function new(headers)
 
 	-- normalize existing headers
 	if headers then
+		-- make a list of header names.
 		local idx = 0
-		for name,val in pairs(headers) do
+		for name in pairs(headers) do
+			idx = idx + 1
+			rawset(tmp, idx, name)
+		end
+		-- add list of header names to headers table.
+		for i=1,idx do
+			local name = tmp[i]
+			local val = headers[name]
+			tmp[i] = nil -- clear temp. table.
 			-- get normalized name
 			local norm = normalized[name:lower()]
 			-- if normalized name is different then current name.
@@ -161,8 +171,7 @@ function new(headers)
 				headers[norm] = val
 				headers[name] = nil
 			end
-			idx = idx + 1
-			rawset(headers, idx, name)
+			headers[i] = name
 		end
 	else
 		headers = {}
