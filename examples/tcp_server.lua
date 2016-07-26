@@ -19,6 +19,7 @@
 -- THE SOFTWARE.
 
 local handler = require'handler'
+handler.init{ backend = "luv" }
 local poll = handler.get_poller()
 local acceptor = require'handler.acceptor'
 

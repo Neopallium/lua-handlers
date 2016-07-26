@@ -27,6 +27,18 @@ nixio_ev = {
 	acceptor = "nixio",
 	poller = "ev",
 },
+luv = {
+	name = "luv",
+	connection = "luv",
+	acceptor = "luv",
+	poller = "luv",
+},
+nixio_luv = {
+	name = "nixio_luv",
+	connection = "nixio",
+	acceptor = "nixio",
+	poller = "luv",
+},
 }
 
 local default

@@ -20,31 +20,15 @@
 
 local handler = require'handler'
 handler.init{ backend = "luv" }
-local connection = require'handler.connection'
+local poll = handler.get_poller()
 
-local tcp_client_mt = {
-handle_error = function(self, err)
-	print('tcp_client.error:', err)
+-- create timer watcher
+local timer = poll:create_timer({
+on_timer = function()
+	print('ping')
 end,
-handle_connected = function(self)
-	print('tcp_client.connected')
-	self.sock:send('hello')
-end,
-handle_data = function(self, data)
-	print('tcp_client.data:', data)
-end,
-}
-tcp_client_mt.__index = tcp_client_mt
-
--- new tcp client
-local function new_tcp_client(host, port)
-	local self = setmetatable({}, tcp_client_mt)
-	self.sock = connection.tcp(self, host, port)
-	return self
-end
-
-local host, port = (arg[1] or 'localhost:8081'):match('^([^:]*):(.*)$')
-local client = new_tcp_client(host, port)
+}, 1.0, 1.0)
+timer:start()
 
 handler.run()
 
