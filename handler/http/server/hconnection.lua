@@ -121,6 +121,7 @@ function conn_mt:close()
 	local sock = self.sock
 	if sock then
 		self.sock = nil
+		self.cur_resp = nil
 		-- kill timer.
 		self.timer:stop()
 		sock:close()

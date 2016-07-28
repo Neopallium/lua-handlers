@@ -93,6 +93,29 @@ function response_mt:write(data)
 	return self.connection:body_write(self, data)
 end
 
+local function null_sink()
+	return 1
+end
+
+function response_mt:sink()
+	return function(chunk, err)
+		if chunk then
+			if chunk ~= "" then
+				local num, err = self:write(chunk)
+				if not num then
+					return nil, err or 'Error writing response.'
+				end
+			end
+			return true
+		end
+		if err then
+			return nil, err
+		end
+		self:write(nil)
+		return true, null_sink
+	end
+end
+
 function response_mt:close()
 	return self:write(nil)
 end
