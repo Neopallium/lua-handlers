@@ -19,6 +19,7 @@
 -- THE SOFTWARE.
 
 local handler = require'handler'
+handler.init{ backend = arg[1] or 'llnet' }
 local httpserver = require'handler.http.server'
 
 local function on_request(server, req, resp)
