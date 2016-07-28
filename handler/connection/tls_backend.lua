@@ -150,10 +150,10 @@ local function sock_send_data(self, buf)
 	local num, errno, err = sock:send(buf)
 	if not num then
 		-- got timeout error block writes.
-		if num == false then
+		if errno == SSL_ERROR_WANT_READ or errno == SSL_ERROR_WANT_WRITE then
 			-- got EAGAIN
 			is_blocked = true
-		else -- data == nil
+		else
 			-- report error
 			sock_handle_error(self, err, errno)
 			return nil, err
@@ -248,7 +248,7 @@ local function sock_recv_data(self)
 					is_connecting = false
 					sock_handle_connected(self)
 				end
-			elseif errno ~= SSL_ERROR_WANT_READ then
+			elseif errno ~= SSL_ERROR_WANT_READ and errno ~= SSL_ERROR_WANT_WRITE then
 				-- report error
 				sock_handle_error(self, err, errno)
 				return false, err
