@@ -474,6 +474,7 @@ local function sock_new_connect(handler, domain, _type, host, port, laddr, lport
 	-- bind to local laddr/lport
 	if laddr then
 		n_assert(sock:setsockopt('socket', 'reuseaddr', 1))
+		sock:setsockopt('socket', 'reuseport', 1)
 		n_assert(sock:bind(laddr, tonumber(lport or 0)))
 	end
 	-- connect to host:port
