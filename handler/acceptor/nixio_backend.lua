@@ -81,6 +81,7 @@ local function sock_new_bind_listen(handler, domain, _type, host, port, tls, bac
 
 	-- make nixio socket non-blocking
 	server:setblocking(false)
+	
 	-- create callback closure
 	local accept_cb
 	if is_dgram then
@@ -109,7 +110,11 @@ local function sock_new_bind_listen(handler, domain, _type, host, port, tls, bac
 						-- make a duplicate server socket
 						sock = new_socket(domain, _type)
 						n_assert(sock:setsockopt('socket', 'reuseaddr', 1))
+						sock:setsockopt('socket', 'reuseport', 1)
+						
+						--this will throw error with udp server
 						n_assert(sock:bind(host, port))
+						
 						-- connect dupped socket to client's ip:port
 						n_assert(sock:connect(c_ip, c_port))
 						-- wrap nixio socket
@@ -162,6 +167,7 @@ local function sock_new_bind_listen(handler, domain, _type, host, port, tls, bac
 
 	-- allow the address to be re-used.
 	n_assert(server:setsockopt('socket', 'reuseaddr', 1))
+	server:setsockopt('socket', 'reuseport', 1)
 	-- bind socket to local host:port
 	n_assert(server:bind(host, port))
 	if not is_dgram then
