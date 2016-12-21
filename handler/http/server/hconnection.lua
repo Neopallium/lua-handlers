@@ -480,6 +480,7 @@ local function create_request_parser(self)
 		if self.need_close then
 			local sock = self.sock
 			if sock then
+				self.sock.shutdown_waiting=true
 				self.sock:shutdown(true, false) -- shutdown reads, but not writes.
 			end
 			error(abort_http_parse, 0) -- end http parsing, drop all other queued http events.
