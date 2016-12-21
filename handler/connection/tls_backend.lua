@@ -275,7 +275,7 @@ local function sock_recv_data(self)
 			sock_handle_error(self, err)
 			return false, err
 		end
-	until len >= read_max and not self.read_blocked
+	until len >= read_max and not self.read_blocked or self.shutdown_waiting
 
 	return true
 end

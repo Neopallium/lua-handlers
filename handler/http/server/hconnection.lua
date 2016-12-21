@@ -355,7 +355,16 @@ function conn_mt:send_body()
 			num, err = sock:send(chunk)
 			if num then len = len + num end
 		end
-	until err
+		
+	until err or chunk == ""
+	if chunk == "" then
+		local send_body_timer = ev.Timer.new(function(loop,timer)
+			timer:stop(loop);
+			timer=nil
+			self:send_body()
+		end, 1, 1)
+		send_body_timer:start(self.loop);
+	end
 end
 
 function conn_mt:response_complete()
@@ -480,6 +489,7 @@ local function create_request_parser(self)
 		if self.need_close then
 			local sock = self.sock
 			if sock then
+				self.sock.shutdown_waiting=true
 				self.sock:shutdown(true, false) -- shutdown reads, but not writes.
 			end
 			error(abort_http_parse, 0) -- end http parsing, drop all other queued http events.
