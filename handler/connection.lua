@@ -84,7 +84,12 @@ end
 
 local function sock_close(self)
 	local sock = self.sock
-	if not sock then return end
+	if not sock then 
+	    if self.write_timer then
+		self.write_timer:stop(self.loop)
+	    end
+	    return 
+	end
 	self.is_closing = true
 	self.read_blocked = true
 	if not self.write_buf or self.has_error then
